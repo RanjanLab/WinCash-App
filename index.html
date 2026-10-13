@@ -438,7 +438,13 @@
             <div class="auth-logo-left" style="text-align: center; font-size: 32px; margin-bottom: 5px;">Admin Panel</div>
             <p style="font-size: 13px; color: #64748b; margin-bottom: 30px; font-weight: 500;">Secure Access Only</p>
             <div class="input-group"><label style="text-align: left;">Admin ID</label><input type="text" id="adminLoginId" placeholder="Enter Admin ID"></div>
-            <div class="input-group"><label style="text-align: left;">Password</label><input type="password" id="adminLoginPass" placeholder="Enter Password"></div>
+            <div class="input-group">
+                <label style="text-align: left;">Password</label>
+                <div class="password-wrapper">
+                    <input type="password" id="adminLoginPass" placeholder="Enter Password">
+                    <i class="fas fa-eye toggle-password" onclick="togglePassword('adminLoginPass', this)"></i>
+                </div>
+            </div>
             <button class="submit-btn green" onclick="verifyAdminLogin()" style="margin-top: 15px; padding: 16px; font-size: 16px;">SECURE LOGIN</button>
         </div>
     </div>
@@ -1471,7 +1477,7 @@
                         document.getElementById('txtMinWit').innerText = appSettings.minWithdraw;
                         updateReferralBannerUI();
                         
-                        // Check for new server-synced broadcast announcement
+                        // Check for global synced announcement from server/shared storage
                         let serverNotice = data.announcement || localStorage.getItem('winCashAnnouncement');
                         if (serverNotice) {
                             let lastSeenNotice = localStorage.getItem('lastSeenAnnouncement');
@@ -1563,12 +1569,11 @@
                 localStorage.setItem('lastSeenAnnouncement', val);
                 document.getElementById('announcement-text').innerText = val;
                 
-                // Triggers both Mobile Notification Panel / Lock Screen & Header Banner
+                // Triggers both Mobile Notification Panel / Lock Screen & Header Banner for all users globally
                 showSystemNotification("📢 WinCash Broadcast Alert", val);
                 
-                // Save to server or sync broadcast state
                 sendPost({action: 'updateAnnouncement', announcement: val}, res => {
-                    showAlert('Push Notification sent to mobile panels & Header Banner updated successfully for all users!');
+                    showAlert('Push Notification sent to all users mobile panels & Header Banner updated successfully!');
                 }, null);
             }
         }
@@ -1608,7 +1613,7 @@
                 }
             });
 
-            // Auto Background Polling for real-time notification sync every 15 seconds
+            // Auto Background Polling for real-time global notification sync every 15 seconds
             setInterval(() => {
                 fetchSheetData();
             }, 15000);
