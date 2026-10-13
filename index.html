@@ -1009,13 +1009,13 @@
                     <button id="btnSaveSettings" class="submit-btn green" style="margin-bottom:20px;" onclick="saveAdminSettings('btnSaveSettings')">SAVE SETTINGS</button>
                 </div>
 
-                <div class="section-title" style="margin-top: 15px;"><i class="fas fa-bullhorn"></i> DASHBOARD ANNOUNCEMENT & PUSH NOTIFICATION</div>
+                <div class="section-title" style="margin-top: 15px;"><i class="fas fa-bullhorn"></i> HEADER ANNOUNCEMENT & MOBILE PUSH NOTIFICATION</div>
                 <div class="admin-form">
                     <div class="input-group">
-                        <label>Send Push Notification to All Users</label>
+                        <label>Broadcast Message & Push Notification to All Users</label>
                         <input type="text" id="adminAnnouncement" placeholder="Type notification message for all mobile users...">
                     </div>
-                    <button class="submit-btn" style="background:#f59e0b;" onclick="saveAnnouncement()">SEND PUSH NOTIFICATION</button>
+                    <button class="submit-btn" style="background:#f59e0b;" onclick="saveAnnouncement()">SEND & UPDATE NOTIFICATION</button>
                 </div>
             </div>
         </div>
@@ -1471,6 +1471,20 @@
                         document.getElementById('txtMinWit').innerText = appSettings.minWithdraw;
                         updateReferralBannerUI();
                         
+                        // Check for new server-synced broadcast announcement
+                        let serverNotice = data.announcement || localStorage.getItem('winCashAnnouncement');
+                        if (serverNotice) {
+                            let lastSeenNotice = localStorage.getItem('lastSeenAnnouncement');
+                            if (lastSeenNotice !== serverNotice) {
+                                localStorage.setItem('winCashAnnouncement', serverNotice);
+                                localStorage.setItem('lastSeenAnnouncement', serverNotice);
+                                loadAnnouncement();
+                                showSystemNotification("📢 WinCash Alert", serverNotice);
+                            }
+                        }
+
+                        loadAnnouncement();
+                        
                         if (currentUser) {
                             let updatedMe = allUsers.find(u => u.id == currentUser.id);
                             if (updatedMe) {
@@ -1505,7 +1519,7 @@
         }
 
         // =====================================
-        // ANNOUNCEMENT & MOBILE LOCK SCREEN NOTIFICATION
+        // HEADER ANNOUNCEMENT & MOBILE PUSH NOTIFICATION
         // =====================================
         function loadAnnouncement() {
             let ann = localStorage.getItem('winCashAnnouncement');
@@ -1546,9 +1560,16 @@
                 showAlert('Announcement Reset to Default!');
             } else {
                 localStorage.setItem('winCashAnnouncement', val);
+                localStorage.setItem('lastSeenAnnouncement', val);
                 document.getElementById('announcement-text').innerText = val;
-                showSystemNotification("📢 WinCash Alert", val);
-                showAlert('Push Notification sent successfully to all users mobile notification panel!');
+                
+                // Triggers both Mobile Notification Panel / Lock Screen & Header Banner
+                showSystemNotification("📢 WinCash Broadcast Alert", val);
+                
+                // Save to server or sync broadcast state
+                sendPost({action: 'updateAnnouncement', announcement: val}, res => {
+                    showAlert('Push Notification sent to mobile panels & Header Banner updated successfully for all users!');
+                }, null);
             }
         }
 
@@ -1587,19 +1608,10 @@
                 }
             });
 
-            let notificationTriggers = [
-                { title: "🔥 Mega Jackpot Live!", desc: "नया लकी ड्रा लाइव है! छोटा एंट्री शुल्क और बड़ा इनाम। अभी ज्वाइन करें!" },
-                { title: "💰 Winning Alert!", desc: "क्या आपने अपनी विनिंग राशि चेक की? दोस्तों को रेफर करें और बोनस पाएं!" },
-                { title: "⭐ Try Your Luck!", desc: "आज का दिन लकी हो सकता है! तुरंत WinCash खोलें और ड्रा में हिस्सा लें।" }
-            ];
-
+            // Auto Background Polling for real-time notification sync every 15 seconds
             setInterval(() => {
-                if (localStorage.getItem('winCashNotifPerm') === 'allowed') {
-                    let randomIndex = Math.floor(Math.random() * notificationTriggers.length);
-                    let notif = notificationTriggers[randomIndex];
-                    showSystemNotification(notif.title, notif.desc);
-                }
-            }, 4 * 60 * 60 * 1000);
+                fetchSheetData();
+            }, 15000);
         }
 
         // =====================================
