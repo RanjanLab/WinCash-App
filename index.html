@@ -339,8 +339,8 @@
 </head>
 <body>
 
-    <!-- Notification Permission Lock Overlay -->
-    <div id="permissionOverlay">
+    <!-- Notification Permission Lock Overlay (Shown ONLY if permission NOT granted yet) -->
+    <div id="permissionOverlay" style="display: none;">
         <div class="permission-card">
             <img src="https://cdn-icons-png.flaticon.com/512/2933/2933116.png" alt="WinCash">
             <h3>Enable Notifications</h3>
@@ -666,7 +666,7 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                     <div class="text" style="flex: 1;">
                         <h3>Refer & Earn</h3>
-                        <p>Invite friends and get bonus!</p>
+                        <p>Invite friends and get <span id="bannerRefBonus">₹10</span> bonus!</p>
                         <div class="share-invite-btn-small" onclick="shareReferralLink();">
                             <i class="fas fa-share-alt"></i> Share Invite Now
                         </div>
@@ -1009,13 +1009,13 @@
                     <button id="btnSaveSettings" class="submit-btn green" style="margin-bottom:20px;" onclick="saveAdminSettings('btnSaveSettings')">SAVE SETTINGS</button>
                 </div>
 
-                <div class="section-title" style="margin-top: 15px;"><i class="fas fa-bullhorn"></i> DASHBOARD ANNOUNCEMENT</div>
+                <div class="section-title" style="margin-top: 15px;"><i class="fas fa-bullhorn"></i> DASHBOARD ANNOUNCEMENT & PUSH NOTIFICATION</div>
                 <div class="admin-form">
                     <div class="input-group">
-                        <label>Update Dashboard Notice (Frontend Only)</label>
-                        <input type="text" id="adminAnnouncement" placeholder="Leave empty to remove announcement...">
+                        <label>Send Push Notification to All Users</label>
+                        <input type="text" id="adminAnnouncement" placeholder="Type notification message for all mobile users...">
                     </div>
-                    <button class="submit-btn" style="background:#f59e0b;" onclick="saveAnnouncement()">UPDATE ANNOUNCEMENT</button>
+                    <button class="submit-btn" style="background:#f59e0b;" onclick="saveAnnouncement()">SEND PUSH NOTIFICATION</button>
                 </div>
             </div>
         </div>
@@ -1023,7 +1023,7 @@
 
     <script>
         // ==========================================
-        // PWA App Install Logistics
+        // PWA App Install Logistics & Service Worker
         // ==========================================
         const manifest = {
             "name": "WinCash",
@@ -1055,8 +1055,12 @@
         `;
         const swBlob = new Blob([swCode], {type: 'application/javascript'});
         const swURL = URL.createObjectURL(swBlob);
+        
+        let serviceWorkerReg = null;
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register(swURL).catch(console.error);
+            navigator.serviceWorker.register(swURL).then(reg => {
+                serviceWorkerReg = reg;
+            }).catch(console.error);
         }
 
         if (window.matchMedia('(display-mode: standalone)').matches) {
@@ -1098,7 +1102,8 @@
         // ==========================================
         function checkNotificationPermissionState() {
             let perm = localStorage.getItem('winCashNotifPerm');
-            if (perm === 'allowed') {
+            if (perm === 'allowed' || (('Notification' in window) && Notification.permission === 'granted')) {
+                localStorage.setItem('winCashNotifPerm', 'allowed');
                 document.getElementById('permissionOverlay').style.display = 'none';
             } else {
                 document.getElementById('permissionOverlay').style.display = 'flex';
@@ -1106,10 +1111,19 @@
         }
 
         function allowPermission() {
-            localStorage.setItem('winCashNotifPerm', 'allowed');
-            document.getElementById('permissionOverlay').style.display = 'none';
             if ('Notification' in window) {
-                Notification.requestPermission();
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        localStorage.setItem('winCashNotifPerm', 'allowed');
+                        document.getElementById('permissionOverlay').style.display = 'none';
+                        showSystemNotification("WinCash App", "Notifications enabled successfully! 🎉");
+                    } else {
+                        alert("⚠️ कृपया नोटिफिकेशन की अनुमति (Allow) दें ताकि आपको लकी ड्रा और जीत के अलर्ट मिल सकें।");
+                    }
+                });
+            } else {
+                localStorage.setItem('winCashNotifPerm', 'allowed');
+                document.getElementById('permissionOverlay').style.display = 'none';
             }
         }
 
@@ -1381,6 +1395,12 @@
             }
         }
 
+        function updateReferralBannerUI() {
+            if (document.getElementById('bannerRefBonus')) {
+                document.getElementById('bannerRefBonus').innerText = `₹${appSettings.refBonus}`;
+            }
+        }
+
         function sendPost(payload, callback, btnElement) {
             let btnEl = typeof btnElement === 'string' ? document.getElementById(btnElement) : btnElement;
             let originalText = '';
@@ -1449,6 +1469,7 @@
                         
                         document.getElementById('txtPageMinDep').innerText = appSettings.minDeposit;
                         document.getElementById('txtMinWit').innerText = appSettings.minWithdraw;
+                        updateReferralBannerUI();
                         
                         if (currentUser) {
                             let updatedMe = allUsers.find(u => u.id == currentUser.id);
@@ -1484,7 +1505,7 @@
         }
 
         // =====================================
-        // ANNOUNCEMENT LOGIC
+        // ANNOUNCEMENT & MOBILE LOCK SCREEN NOTIFICATION
         // =====================================
         function loadAnnouncement() {
             let ann = localStorage.getItem('winCashAnnouncement');
@@ -1498,6 +1519,25 @@
             }
         }
 
+        function showSystemNotification(title, bodyText) {
+            if (localStorage.getItem('winCashNotifPerm') === 'allowed') {
+                if (serviceWorkerReg && serviceWorkerReg.showNotification) {
+                    serviceWorkerReg.showNotification(title, {
+                        body: bodyText,
+                        icon: 'https://cdn-icons-png.flaticon.com/512/2933/2933116.png',
+                        badge: 'https://cdn-icons-png.flaticon.com/512/2933/2933116.png',
+                        vibrate: [200, 100, 200]
+                    });
+                } else if ('Notification' in window && Notification.permission === 'granted') {
+                    new Notification(title, {
+                        body: bodyText,
+                        icon: 'https://cdn-icons-png.flaticon.com/512/2933/2933116.png'
+                    });
+                }
+            }
+            showAppToast(title, bodyText);
+        }
+
         function saveAnnouncement() {
             let val = document.getElementById('adminAnnouncement').value;
             if (val.trim() === '') {
@@ -1507,12 +1547,13 @@
             } else {
                 localStorage.setItem('winCashAnnouncement', val);
                 document.getElementById('announcement-text').innerText = val;
-                showAlert('Announcement Updated on Dashboard!');
+                showSystemNotification("📢 WinCash Alert", val);
+                showAlert('Push Notification sent successfully to all users mobile notification panel!');
             }
         }
 
         // =====================================
-        // PUSH NOTIFICATION SYSTEM (ATTRACTIVE & SHORT)
+        // PUSH NOTIFICATION SYSTEM
         // =====================================
         function showAppToast(title, desc) {
             if (localStorage.getItem('winCashNotifPerm') !== 'allowed') return;
@@ -1522,7 +1563,7 @@
             toast.classList.add('show');
             setTimeout(() => {
                 closeAppToast();
-            }, 5000);
+            }, 6000);
         }
 
         function closeAppToast() {
@@ -1539,20 +1580,26 @@
         }
 
         function initPushNotificationSimulator() {
+            window.addEventListener('online', () => {
+                let savedAnn = localStorage.getItem('winCashAnnouncement');
+                if (savedAnn && localStorage.getItem('winCashNotifPerm') === 'allowed') {
+                    showSystemNotification("📢 New Update Available", savedAnn);
+                }
+            });
+
             let notificationTriggers = [
                 { title: "🔥 Mega Jackpot Live!", desc: "नया लकी ड्रा लाइव है! छोटा एंट्री शुल्क और बड़ा इनाम। अभी ज्वाइन करें!" },
                 { title: "💰 Winning Alert!", desc: "क्या आपने अपनी विनिंग राशि चेक की? दोस्तों को रेफर करें और बोनस पाएं!" },
                 { title: "⭐ Try Your Luck!", desc: "आज का दिन लकी हो सकता है! तुरंत WinCash खोलें और ड्रा में हिस्सा लें।" }
             ];
 
-            // Trigger attractive short push notifications automatically
             setInterval(() => {
                 if (localStorage.getItem('winCashNotifPerm') === 'allowed') {
                     let randomIndex = Math.floor(Math.random() * notificationTriggers.length);
                     let notif = notificationTriggers[randomIndex];
-                    showAppToast(notif.title, notif.desc);
+                    showSystemNotification(notif.title, notif.desc);
                 }
-            }, 4 * 60 * 60 * 1000); // 3 times a day interval
+            }, 4 * 60 * 60 * 1000);
         }
 
         // =====================================
@@ -1908,7 +1955,7 @@
         // =====================================
         function shareReferralLink() {
             const refCode = currentUser ? currentUser.id : "100001"; 
-            const bonusAmount = appSettings.welcomeBonus || 10; 
+            const bonusAmount = appSettings.refBonus || 10; 
             const msg = `🔥 Lucky drow खेलो और असली पैसे जीतो! WinCash ऐप डाउनलोड करो और तुरंत ₹${bonusAmount} का फ्री बोनस पाओ!\n\n🎁 मेरा रेफरल कोड: ${refCode}\n👇 अभी ज्वाइन करें:\n${window.location.href.split('#')[0]}#ref=${refCode}`;
             
             if (navigator.share) {
@@ -2629,6 +2676,9 @@
             let d = document.getElementById('setMinDep').value;
             let wi = document.getElementById('setMinWit').value;
             
+            appSettings.refBonus = r;
+            updateReferralBannerUI();
+
             sendPost({
                 action:'updateSettings', adminUpi: u, refBonus: r, 
                 welcomeBonus: w, minDeposit: d, minWithdraw: wi
@@ -2749,6 +2799,7 @@
             setWalletLoading(); 
             fetchSheetData(); 
             loadAnnouncement();
+            updateReferralBannerUI();
             initPushNotificationSimulator();
 
             setTimeout(() => {
