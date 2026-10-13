@@ -990,8 +990,12 @@
 
             <!-- Admin: Settings -->
             <div id="settingsSec" class="admin-tab-content">
-                <div class="section-title"><i class="fas fa-cogs"></i> APP SETTINGS</div>
+                <div class="section-title"><i class="fas fa-cogs"></i> APP SETTINGS & ANNOUNCEMENT BANNER</div>
                 <div class="admin-form">
+                    <div class="input-group">
+                        <label>Announcement Banner Message (Live on Home Page)</label>
+                        <input type="text" id="adminAnnouncement" placeholder="Type announcement banner message here...">
+                    </div>
                     <div class="input-group">
                         <label>Admin UPI ID (For Deposits)</label>
                         <input type="text" id="setAdminUpi">
@@ -1012,16 +1016,7 @@
                         <label>Minimum Withdrawal (₹)</label>
                         <input type="number" id="setMinWit">
                     </div>
-                    <button id="btnSaveSettings" class="submit-btn green" style="margin-bottom:20px;" onclick="saveAdminSettings('btnSaveSettings')">SAVE SETTINGS</button>
-                </div>
-
-                <div class="section-title" style="margin-top: 15px;"><i class="fas fa-bullhorn"></i> HEADER ANNOUNCEMENT & MOBILE PUSH NOTIFICATION</div>
-                <div class="admin-form">
-                    <div class="input-group">
-                        <label>Broadcast Message & Push Notification to All Users</label>
-                        <input type="text" id="adminAnnouncement" placeholder="Type notification message for all mobile users...">
-                    </div>
-                    <button class="submit-btn" style="background:#f59e0b;" onclick="saveAnnouncement()">SEND & UPDATE NOTIFICATION</button>
+                    <button id="btnSaveSettings" class="submit-btn green" style="margin-bottom:20px;" onclick="saveAdminSettings('btnSaveSettings')">SAVE SETTINGS & BANNER</button>
                 </div>
             </div>
         </div>
@@ -1480,13 +1475,8 @@
                         // Check for global synced announcement from server/shared storage
                         let serverNotice = data.announcement || localStorage.getItem('winCashAnnouncement');
                         if (serverNotice) {
-                            let lastSeenNotice = localStorage.getItem('lastSeenAnnouncement');
-                            if (lastSeenNotice !== serverNotice) {
-                                localStorage.setItem('winCashAnnouncement', serverNotice);
-                                localStorage.setItem('lastSeenAnnouncement', serverNotice);
-                                loadAnnouncement();
-                                showSystemNotification("📢 WinCash Alert", serverNotice);
-                            }
+                            localStorage.setItem('winCashAnnouncement', serverNotice);
+                            loadAnnouncement();
                         }
 
                         loadAnnouncement();
@@ -1525,17 +1515,17 @@
         }
 
         // =====================================
-        // HEADER ANNOUNCEMENT & MOBILE PUSH NOTIFICATION
+        // HEADER ANNOUNCEMENT BANNER
         // =====================================
         function loadAnnouncement() {
             let ann = localStorage.getItem('winCashAnnouncement');
             if (!ann || ann.trim() === '') {
-                ann = "WinCash में आपका स्वागत है! Lucky Draw जॉइन करे और कैश जीतें। तुरंत पैसे निकालने की सुविधा उपलब्ध है। अपने दोस्तों को आमंत्रित करें और आकर्षक बोनस पाएं! 💸 खेलें और बड़ा जीतें!";
+                ann = "🎉 WinCash में आपका स्वागत है! Lucky Draw ज्वाइन करे और असली कैश जीतें। तुरंत पैसे निकालने की सुविधा उपलब्ध है। अपने दोस्तों को आमंत्रित करें और बोनस पाएं! 💸 खेलें और बड़ा जीते।";
             }
             document.getElementById('announcement-text').innerText = ann;
             
             if(document.getElementById('adminAnnouncement')) {
-                document.getElementById('adminAnnouncement').value = localStorage.getItem('winCashAnnouncement') || '';
+                document.getElementById('adminAnnouncement').value = localStorage.getItem('winCashAnnouncement') || ann;
             }
         }
 
@@ -1556,26 +1546,6 @@
                 }
             }
             showAppToast(title, bodyText);
-        }
-
-        function saveAnnouncement() {
-            let val = document.getElementById('adminAnnouncement').value;
-            if (val.trim() === '') {
-                localStorage.removeItem('winCashAnnouncement');
-                loadAnnouncement(); 
-                showAlert('Announcement Reset to Default!');
-            } else {
-                localStorage.setItem('winCashAnnouncement', val);
-                localStorage.setItem('lastSeenAnnouncement', val);
-                document.getElementById('announcement-text').innerText = val;
-                
-                // Triggers both Mobile Notification Panel / Lock Screen & Header Banner for all users globally
-                showSystemNotification("📢 WinCash Broadcast Alert", val);
-                
-                sendPost({action: 'updateAnnouncement', announcement: val}, res => {
-                    showAlert('Push Notification sent to all users mobile panels & Header Banner updated successfully!');
-                }, null);
-            }
         }
 
         // =====================================
@@ -1613,7 +1583,7 @@
                 }
             });
 
-            // Auto Background Polling for real-time global notification sync every 15 seconds
+            // Auto Background Polling for real-time global notification/announcement sync every 15 seconds
             setInterval(() => {
                 fetchSheetData();
             }, 15000);
@@ -2676,9 +2646,8 @@
         }
 
         function renderAdminSettings() {
-            if(document.getElementById('setAnnouncement')) {
-                document.getElementById('setAnnouncement').value = document.getElementById('announcement-text').innerText;
-            }
+            let currentAnn = localStorage.getItem('winCashAnnouncement') || document.getElementById('announcement-text').innerText;
+            document.getElementById('adminAnnouncement').value = currentAnn;
             document.getElementById('setAdminUpi').value = appSettings.adminUpi; 
             document.getElementById('setRefBonus').value = appSettings.refBonus;
             document.getElementById('setWelcomeBonus').value = appSettings.welcomeBonus; 
@@ -2687,6 +2656,7 @@
         }
 
         function saveAdminSettings(btnId) {
+            let annText = document.getElementById('adminAnnouncement').value;
             let u = document.getElementById('setAdminUpi').value;
             let r = document.getElementById('setRefBonus').value;
             let w = document.getElementById('setWelcomeBonus').value;
@@ -2696,11 +2666,16 @@
             appSettings.refBonus = r;
             updateReferralBannerUI();
 
+            if (annText.trim() !== '') {
+                localStorage.setItem('winCashAnnouncement', annText);
+                document.getElementById('announcement-text').innerText = annText;
+            }
+
             sendPost({
                 action:'updateSettings', adminUpi: u, refBonus: r, 
-                welcomeBonus: w, minDeposit: d, minWithdraw: wi
+                welcomeBonus: w, minDeposit: d, minWithdraw: wi, announcement: annText
             }, res => { 
-                showAlert('App Settings Saved!'); 
+                showAlert('App Settings & Announcement Banner Saved Successfully!'); 
                 setTimeout(fetchSheetData, 1000);
             }, btnId);
         }
