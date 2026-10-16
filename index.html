@@ -426,7 +426,7 @@
         
         <div class="sidebar-divider"></div>
         <a onclick="openAdminPanel()" id="nav-admin"><i class="fas fa-user-shield"></i> Admin Panel</a>
-        <a onclick="logoutUser()" style="color: #ef4444;"><i class="fas fa-sign-out-alt"></i> Logout</a>
+        <a onclick="confirmLogout()" style="color: #ef4444;"><i class="fas fa-sign-out-alt"></i> Logout</a>
     </div>
     <div id="overlay" class="overlay" onclick="closeNav()"></div>
 
@@ -1477,7 +1477,6 @@
                         document.getElementById('txtMinWit').innerText = appSettings.minWithdraw;
                         updateReferralBannerUI();
                         
-                        // Check for global synced announcement from server/shared storage
                         let serverNotice = data.announcement || localStorage.getItem('winCashAnnouncement');
                         if (serverNotice) {
                             let lastSeenNotice = localStorage.getItem('lastSeenAnnouncement');
@@ -1569,7 +1568,6 @@
                 localStorage.setItem('lastSeenAnnouncement', val);
                 document.getElementById('announcement-text').innerText = val;
                 
-                // Triggers both Mobile Notification Panel / Lock Screen & Header Banner for all users globally
                 showSystemNotification("📢 WinCash Broadcast Alert", val);
                 
                 sendPost({action: 'updateAnnouncement', announcement: val}, res => {
@@ -1613,7 +1611,6 @@
                 }
             });
 
-            // Auto Background Polling for real-time global notification sync every 15 seconds
             setInterval(() => {
                 fetchSheetData();
             }, 15000);
@@ -1695,8 +1692,14 @@
             }, btnId);
         }
 
+        function confirmLogout() {
+            closeNav();
+            showConfirm("Are you sure you want to logout?", () => {
+                logoutUser();
+            });
+        }
+
         function logoutUser() { 
-            closeNav(); 
             currentUser = null; 
             isAdminAuthenticated = false;
             localStorage.removeItem('winCashUser');
