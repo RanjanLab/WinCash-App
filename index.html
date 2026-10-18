@@ -2100,6 +2100,10 @@
             liveDraws.forEach(draw => {
                 const isJoined = allTransactions.some(t => t.userId == currentUser.id && t.type === 'Draw Entry Fee' && t.details.includes(draw.id));
                 
+                // Calculate Total Joined for this draw
+                const drawJoinedTxns = allTransactions.filter(t => t.type === 'Draw Entry Fee' && t.details.includes(draw.id));
+                const drawJoinedCount = new Set(drawJoinedTxns.map(t => t.userId)).size;
+
                 const btnHtml = isJoined 
                     ? `<button class="join-btn-small joined" disabled><i class="fas fa-check-circle"></i> JOINED</button>` 
                     : `<button id="btnJoin_${draw.id}" class="join-btn-small" onclick="joinDraw('${draw.id}', 'btnJoin_${draw.id}')"><i class="fas fa-check-circle"></i> JOIN ₹${draw.fee}</button>`;
@@ -2112,7 +2116,12 @@
                             <div class="draw-row-title" style="margin-bottom: 4px;">${draw.name}</div>
                             <div style="font-size: 13px; color: #64748b; font-weight: 600; text-align: left;">ID: ${draw.id}</div>
                         </div>
-                        <div class="live-badge" style="align-self: flex-start;">LIVE</div>
+                        <div style="display: flex; align-items: center; gap: 8px; align-self: flex-start;">
+                            <span style="background: #eff6ff; color: #3b82f6; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; gap: 4px; border: 1px solid #bfdbfe;">
+                                <i class="fas fa-users"></i> ${drawJoinedCount} Joined
+                            </span>
+                            <div class="live-badge" style="margin: 0;">LIVE</div>
+                        </div>
                     </div>
                     <div class="draw-row-bottom" style="padding-top: 4px; display: flex; align-items: center;">
                         <div class="draw-row-stats" style="flex: 1;">
