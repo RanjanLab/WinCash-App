@@ -1104,12 +1104,11 @@
         }
 
         // ==========================================
-        // NOTIFICATION PERMISSION LOCK LOGIC (MODIFIED)
+        // NOTIFICATION PERMISSION LOCK LOGIC
         // ==========================================
         function checkNotificationPermissionState() {
             let perm = localStorage.getItem('winCashNotifPerm');
             if (perm === 'allowed' || perm === 'denied' || (('Notification' in window) && Notification.permission === 'granted')) {
-                // If it is granted from browser side, update local storage
                 if (('Notification' in window) && Notification.permission === 'granted') {
                     localStorage.setItem('winCashNotifPerm', 'allowed');
                 }
@@ -1127,7 +1126,6 @@
                         document.getElementById('permissionOverlay').style.display = 'none';
                         showSystemNotification("WinCash App", "Notifications enabled successfully! 🎉");
                     } else {
-                        // User denied via browser popup - remove alert overlay and continue app usage
                         localStorage.setItem('winCashNotifPerm', 'denied');
                         document.getElementById('permissionOverlay').style.display = 'none';
                     }
@@ -1139,7 +1137,6 @@
         }
 
         function denyPermission() {
-            // Remove overlay so user can still use the app even after denying
             localStorage.setItem('winCashNotifPerm', 'denied');
             document.getElementById('permissionOverlay').style.display = 'none';
         }
@@ -2085,7 +2082,7 @@
         }
 
         // =====================================
-        // DRAW ACTIONS (OPTIMISTIC SILENT SYNC)
+        // DRAW ACTIONS (MODIFIED FOR SPINNER)
         // =====================================
         function renderLiveDraws() {
             const container = document.getElementById('live-draws-container'); 
@@ -2153,48 +2150,9 @@
                 });
             }
             
-            let btn = document.getElementById(btnElementId);
-            
             showConfirm(`Do you want to join ${draw.name} for ₹${draw.fee}?`, 
                 function() {
-                    let fee = parseInt(draw.fee);
-                    let dep = parseInt(currentUser.depositWallet);
-                    if (isNaN(dep)) dep = parseInt(currentUser.wallet) || 0;
-                    let win = parseInt(currentUser.winningWallet) || 0;
-                    
-                    if (dep >= fee) {
-                        currentUser.depositWallet = dep - fee;
-                    } else {
-                        currentUser.depositWallet = 0;
-                        currentUser.winningWallet = win - (fee - dep);
-                    }
-                    localStorage.setItem('winCashUser', JSON.stringify(currentUser));
-                    updateWalletUI(); 
-
-                    if(btn) {
-                        btn.parentElement.parentElement.classList.add('joined-card');
-                        btn.className = 'join-btn-small joined';
-                        btn.innerHTML = '<i class="fas fa-check-circle"></i> JOINED';
-                        btn.style.opacity = '1';
-                        btn.onclick = null;
-                        btn.removeAttribute('onclick');
-                    }
-
-                    let tempTxn = {
-                        id: "TXN" + generateTxnID(),
-                        type: 'Draw Entry Fee',
-                        userId: currentUser.id,
-                        userName: currentUser.name,
-                        amount: fee,
-                        details: `Joined Draw ${draw.name} (ID: ${draw.id})`,
-                        dateTime: getCurrentDateTime(),
-                        status: 'Approved'
-                    };
-                    allTransactions.unshift(tempTxn);
-
-                    if(document.getElementById('transactionsView').classList.contains('active')) renderUserTransactions();
-                    if(document.getElementById('myDrawsView').classList.contains('active')) renderMyDraws();
-
+                    // Send API request first, passing btnElementId will automatically trigger the spinner from sendPost function
                     sendPost({
                         action: 'joinDraw', drawId: drawId, drawName: draw.name, userId: currentUser.id, 
                         userName: currentUser.name, fee: draw.fee, dateTime: getCurrentDateTime()
@@ -2203,9 +2161,53 @@
                             showAlert(res.message || 'Error occurred while saving to server.');
                             fetchSheetData(); 
                         } else {
+                            // On Success: Update local wallet balance
+                            let fee = parseInt(draw.fee);
+                            let dep = parseInt(currentUser.depositWallet);
+                            if (isNaN(dep)) dep = parseInt(currentUser.wallet) || 0;
+                            let win = parseInt(currentUser.winningWallet) || 0;
+                            
+                            if (dep >= fee) {
+                                currentUser.depositWallet = dep - fee;
+                            } else {
+                                currentUser.depositWallet = 0;
+                                currentUser.winningWallet = win - (fee - dep);
+                            }
+                            localStorage.setItem('winCashUser', JSON.stringify(currentUser));
+                            updateWalletUI(); 
+
+                            // Modify the Button to successfully JOINED state visually
+                            let updatedBtn = document.getElementById(btnElementId);
+                            if (updatedBtn) {
+                                updatedBtn.parentElement.parentElement.classList.add('joined-card');
+                                updatedBtn.className = 'join-btn-small joined';
+                                updatedBtn.innerHTML = '<i class="fas fa-check-circle"></i> JOINED';
+                                updatedBtn.style.opacity = '1';
+                                updatedBtn.disabled = true;
+                                updatedBtn.style.cursor = 'default';
+                                updatedBtn.onclick = null;
+                                updatedBtn.removeAttribute('onclick');
+                            }
+
+                            // Inject the transaction locally
+                            let tempTxn = {
+                                id: "TXN" + generateTxnID(),
+                                type: 'Draw Entry Fee',
+                                userId: currentUser.id,
+                                userName: currentUser.name,
+                                amount: fee,
+                                details: `Joined Draw ${draw.name} (ID: ${draw.id})`,
+                                dateTime: getCurrentDateTime(),
+                                status: 'Approved'
+                            };
+                            allTransactions.unshift(tempTxn);
+
+                            if(document.getElementById('transactionsView').classList.contains('active')) renderUserTransactions();
+                            if(document.getElementById('myDrawsView').classList.contains('active')) renderMyDraws();
+
                             fetchSheetData(); 
                         }
-                    }, null); 
+                    }, btnElementId); // Passes btn ID here so sendPost controls loading spinner
                 },
                 function() {}
             );
