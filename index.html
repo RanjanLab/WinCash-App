@@ -2082,7 +2082,7 @@
         }
 
         // =====================================
-        // DRAW ACTIONS (MODIFIED FOR SPINNER)
+        // DRAW ACTIONS (MODIFIED FOR DEPOSIT WALLET ONLY)
         // =====================================
         function renderLiveDraws() {
             const container = document.getElementById('live-draws-container'); 
@@ -2144,8 +2144,13 @@
             const draw = allDraws.find(d => d.id == drawId);
             if (!draw) return;
             
-            if (getTotalWallet() < parseInt(draw.fee)) {
-                return showAlert("Insufficient Wallet Balance! Please deposit cash to join.", function() {
+            let fee = parseInt(draw.fee);
+            let depWallet = parseInt(currentUser.depositWallet);
+            if (isNaN(depWallet)) depWallet = parseInt(currentUser.wallet) || 0;
+
+            // Check if Deposit Wallet has enough balance
+            if (depWallet < fee) {
+                return showConfirm(`डिपॉजिट वॉलेट में पर्याप्त बैलेंस नहीं है, क्या आप बैलेंस डिपॉजिट करना चाहते हैं।`, function() {
                     switchView('depositView');
                 });
             }
@@ -2161,18 +2166,8 @@
                             showAlert(res.message || 'Error occurred while saving to server.');
                             fetchSheetData(); 
                         } else {
-                            // On Success: Update local wallet balance
-                            let fee = parseInt(draw.fee);
-                            let dep = parseInt(currentUser.depositWallet);
-                            if (isNaN(dep)) dep = parseInt(currentUser.wallet) || 0;
-                            let win = parseInt(currentUser.winningWallet) || 0;
-                            
-                            if (dep >= fee) {
-                                currentUser.depositWallet = dep - fee;
-                            } else {
-                                currentUser.depositWallet = 0;
-                                currentUser.winningWallet = win - (fee - dep);
-                            }
+                            // On Success: Update local wallet balance (Deduct ONLY from Deposit Wallet)
+                            currentUser.depositWallet = depWallet - fee;
                             localStorage.setItem('winCashUser', JSON.stringify(currentUser));
                             updateWalletUI(); 
 
@@ -2207,7 +2202,7 @@
 
                             fetchSheetData(); 
                         }
-                    }, btnElementId); // Passes btn ID here so sendPost controls loading spinner
+                    }, btnElementId); 
                 },
                 function() {}
             );
