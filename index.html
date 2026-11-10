@@ -232,7 +232,6 @@
             100% { background-color: #cbd5e1; transform: scale(1); }
         }
 
-        /* Pause animation on touch/hover for both banner and dots */
         .banner-slider-container:hover .banner-slider-track,
         .banner-slider-container:hover ~ .slider-dots .dot,
         .banner-slider-container:active .banner-slider-track,
@@ -307,6 +306,33 @@
         .join-btn-small.joined::after { display: none; }
         .join-btn-small.joined { background: #f1f5f9; color: #64748b; box-shadow: none; border: 1px solid #cbd5e1; cursor: default; }
 
+        /* Professional Progress Bar for Draws */
+        .progress-container {
+            background: #e2e8f0;
+            border-radius: 10px;
+            height: 6px;
+            width: 100%;
+            overflow: hidden;
+            margin-top: 5px;
+        }
+        .progress-bar {
+            background: linear-gradient(90deg, #10b981, #059669);
+            height: 100%;
+            border-radius: 10px;
+            transition: width 0.5s ease-in-out;
+        }
+        .progress-bar.nearly-full { background: linear-gradient(90deg, #f59e0b, #ea580c); }
+        .progress-bar.full { background: linear-gradient(90deg, #3b82f6, #2563eb); }
+        .progress-text {
+            font-size: 11px;
+            color: #64748b;
+            font-weight: 700;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+
         /* Admin Forms & Nav */
         .admin-nav { display: flex; gap: 6px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 5px; }
         .admin-nav-btn { flex: 1; min-width: 75px; padding: 10px 5px; border: none; border-radius: 10px; font-size: 13px; font-weight: 700; background: #e2e8f0; color: #475569; cursor: pointer; }
@@ -369,7 +395,7 @@
 </head>
 <body>
 
-    <!-- Notification Permission Lock Overlay (Shown ONLY if permission NOT granted yet) -->
+    <!-- Notification Permission Lock Overlay -->
     <div id="permissionOverlay" style="display: none;">
         <div class="permission-card">
             <img src="https://cdn-icons-png.flaticon.com/512/2933/2933116.png" alt="WinCash">
@@ -409,7 +435,7 @@
         <div class="loading-text">Optimizing App...</div>
     </div>
 
-    <!-- App Install Bottom Popup Banner -->
+    <!-- App Install Banner - Bottom Popup -->
     <div id="installAppBanner">
         <div style="display: flex; align-items: center; gap: 12px;">
             <img src="https://cdn-icons-png.flaticon.com/512/2933/2933116.png" alt="WinCash Earning" style="width: 42px; height: 42px; border-radius: 10px;">
@@ -573,6 +599,11 @@
             <div class="input-group">
                 <label>Prize Pool (₹)</label>
                 <input type="number" id="prizePool" placeholder="e.g. 10000">
+            </div>
+            <!-- MINIMUM USER FIELD -->
+            <div class="input-group">
+                <label>Minimum Users Required</label>
+                <input type="number" id="minUsers" placeholder="e.g. 50">
             </div>
             <button id="btnSaveDraw" class="submit-btn" onclick="saveDraw('btnSaveDraw')">SAVE DRAW</button>
         </div>
@@ -847,7 +878,7 @@
             <div id="witPageView2" class="admin-form" style="display: none; text-align: center; padding: 40px 20px;">
                 <i class="fas fa-check-circle" style="font-size: 60px; color: #10b981; margin-bottom: 15px;"></i>
                 <h3 style="font-size: 20px; color: #0f172a; margin-bottom: 10px;">Withdrawal Requested!</h3>
-                <p style="font-size: 14px; color: #64748b; margin-bottom: 25px;">कृपया प्रतीक्षा करें। अगले 24 घंटों के भीतर राशि आपके अकाउंट में सफलतापूर्वक ट्रांसफर कर दी जाएगी।</p>
+                <p style="font-size: 14px; color: #64748b; margin-bottom: 25px;">कृपया प्रतीक्षा करें। अगले 24 घंटों भीतर राशि आपके अकाउंट में सफलतापूर्वक ट्रांसफर कर दी जाएगी।</p>
                 <button class="submit-btn green" onclick="switchView('homeView')">BACK TO HOME</button>
             </div>
         </div>
@@ -1263,12 +1294,17 @@
             let yesBtn = document.getElementById('confirmYesBtn');
             let newYesBtn = yesBtn.cloneNode(true);
             yesBtn.parentNode.replaceChild(newYesBtn, yesBtn);
+            newYesBtn.disabled = false; // Ensure button is active
+            newYesBtn.innerHTML = 'YES';
             
             let noBtn = document.getElementById('confirmNoBtn');
             let newNoBtn = noBtn.cloneNode(true);
             noBtn.parentNode.replaceChild(newNoBtn, noBtn);
             
             newYesBtn.onclick = function() {
+                if (this.disabled) return; // Stop Double click
+                this.disabled = true; // Instantly lock
+                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; 
                 document.getElementById('customConfirm').style.display = 'none'; 
                 if(onConfirm) onConfirm(); 
             }; 
@@ -1351,8 +1387,12 @@
         // Winner Selection Mode
         let currentWinnerMode = 'manual';
         
-        // Control Data Syncing Flag
+        // Control Data Syncing Flags
         let isDataFetching = true;
+        let tempLocalTxns = []; // For preventing Google Sheets Sync Lag issues
+        
+        // Local Storage Object for Minimum Users Data
+        let localDrawSettings = JSON.parse(localStorage.getItem('winCashDrawSettings')) || {};
 
         // Custom Select Logic
         window.addEventListener('click', function(e) {
@@ -1520,7 +1560,15 @@
                         if (data.users) allUsers = data.users;
                         let txns = data.transactions || [];
                         let reqs = data.requests || [];
-                        allTransactions = [...txns, ...reqs].reverse();
+                        let serverTxns = [...txns, ...reqs].reverse();
+
+                        // Filter out local temp txns that have now been confirmed in server fetch
+                        tempLocalTxns = tempLocalTxns.filter(temp => {
+                            return !serverTxns.some(st => st.userId == temp.userId && st.type === temp.type && st.details === temp.details);
+                        });
+
+                        // Preserve local changes across sync lag
+                        allTransactions = [...tempLocalTxns, ...serverTxns];
 
                         if (data.draws) allDraws = data.draws;
                         
@@ -2135,7 +2183,7 @@
         }
 
         // =====================================
-        // DRAW ACTIONS (MODIFIED FOR DEPOSIT WALLET ONLY)
+        // DRAW ACTIONS (UPDATED WITH PROGRESS BAR)
         // =====================================
         function renderLiveDraws() {
             const container = document.getElementById('live-draws-container'); 
@@ -2166,21 +2214,44 @@
                     : `<button id="btnJoin_${draw.id}" class="join-btn-small" onclick="joinDraw('${draw.id}', 'btnJoin_${draw.id}')"><i class="fas fa-check-circle"></i> JOIN ₹${draw.fee}</button>`;
                 const cardClass = isJoined ? 'draw-row-card joined-card' : 'draw-row-card';
 
+                // GET MINIMUM USERS LOGIC
+                let minReq = draw.minUsers || localDrawSettings[draw.name] || 50; 
+                let progressPercent = Math.min((drawJoinedCount / minReq) * 100, 100);
+                
+                let progressColorClass = '';
+                if (progressPercent >= 100) progressColorClass = 'full';
+                else if (progressPercent >= 80) progressColorClass = 'nearly-full';
+
+                const progressBarHtml = `
+                    <div style="width: 100%; margin-top: 5px; margin-bottom: 5px;">
+                        <div class="progress-text">
+                            <span style="color: #3b82f6;"><i class="fas fa-users"></i> ${drawJoinedCount} Joined</span>
+                            <span>Target: ${minReq}</span>
+                        </div>
+                        <div class="progress-container">
+                            <div class="progress-bar ${progressColorClass}" style="width: ${progressPercent}%;"></div>
+                        </div>
+                        <div style="font-size: 10px; color: #94a3b8; text-align: right; margin-top: 4px; font-weight: 600;">
+                            ${minReq - drawJoinedCount > 0 ? (minReq - drawJoinedCount) + ' slots left' : 'Draw is ready!'}
+                        </div>
+                    </div>
+                `;
+
                 container.innerHTML += `
                 <div class="${cardClass}">
-                    <div class="draw-row-top" style="border-bottom: 1px dashed #cbd5e1; padding-bottom: 12px; margin-bottom: 2px;">
+                    <div class="draw-row-top" style="border-bottom: 1px dashed #cbd5e1; padding-bottom: 12px; margin-bottom: 8px;">
                         <div>
                             <div class="draw-row-title" style="margin-bottom: 4px;">${draw.name}</div>
                             <div style="font-size: 13px; color: #64748b; font-weight: 600; text-align: left;">ID: ${draw.id}</div>
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px; align-self: flex-start;">
-                            <span style="background: #eff6ff; color: #3b82f6; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; gap: 4px; border: 1px solid #bfdbfe;">
-                                <i class="fas fa-users"></i> ${drawJoinedCount} Joined
-                            </span>
                             <div class="live-badge" style="margin: 0;">LIVE</div>
                         </div>
                     </div>
-                    <div class="draw-row-bottom" style="padding-top: 4px; display: flex; align-items: center;">
+                    
+                    ${progressBarHtml}
+
+                    <div class="draw-row-bottom" style="padding-top: 12px; border-top: 1px dashed #f1f5f9; margin-top: 8px; display: flex; align-items: center;">
                         <div class="draw-row-stats" style="flex: 1;">
                             <span class="prize-container" style="display:flex; flex-direction:column; align-items:flex-start;">
                                 <span style="font-size:12px; color:#64748b; font-weight:700; text-transform:uppercase; margin-bottom:2px;">Prize Pool</span>
@@ -2193,7 +2264,13 @@
             });
         }
 
+        // =====================================
+        // JOIN DRAW LOGIC WITH CONFIRMATION ALERT
+        // =====================================
         function joinDraw(drawId, btnElementId) {
+            let btnEl = document.getElementById(btnElementId);
+            if (btnEl && (btnEl.disabled || btnEl.classList.contains('joined'))) return; // Prevent double click instantly
+
             const draw = allDraws.find(d => d.id == drawId);
             if (!draw) return;
             
@@ -2201,43 +2278,58 @@
             let depWallet = parseInt(currentUser.depositWallet);
             if (isNaN(depWallet)) depWallet = parseInt(currentUser.wallet) || 0;
 
-            // Check if Deposit Wallet has enough balance
             if (depWallet < fee) {
-                return showConfirm(`डिपॉजिट वॉलेट में पर्याप्त बैलेंस नहीं है, क्या आप बैलेंस डिपॉजिट करना चाहते हैं।`, function() {
+                return showConfirm(`डिपॉजिट वॉलेट में पर्याप्त बैलेंस नहीं है, क्या आप बैलेंस डिपॉजिट करना चाहते हैं?`, function() {
                     switchView('depositView');
                 });
             }
             
-            showConfirm(`Do you want to join ${draw.name} for ₹${draw.fee}?`, 
+            // 1. Confirm Alert before joining
+            showConfirm(`क्या आप सच में ${draw.name} को ₹${draw.fee} में जॉइन करना चाहते हैं?`, 
                 function() {
-                    // Send API request first, passing btnElementId will automatically trigger the spinner from sendPost function
+                    // YES CLICKED: Change Button to Please Wait
+                    let originalText = btnEl ? btnEl.innerHTML : `<i class="fas fa-check-circle"></i> JOIN ₹${draw.fee}`;
+                    
+                    if (btnEl) {
+                        btnEl.disabled = true;
+                        btnEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> PLEASE WAIT...';
+                        btnEl.style.opacity = '0.8';
+                        btnEl.style.cursor = 'not-allowed';
+                    }
+
+                    // 2. Send Request in background
                     sendPost({
                         action: 'joinDraw', drawId: drawId, drawName: draw.name, userId: currentUser.id, 
                         userName: currentUser.name, fee: draw.fee, dateTime: getCurrentDateTime()
                     }, res => {
                         if(res && res.status === 'error') {
+                            // 3. REVERT ON FAILURE
+                            if (btnEl) {
+                                btnEl.disabled = false;
+                                btnEl.innerHTML = originalText;
+                                btnEl.style.opacity = '1';
+                                btnEl.style.cursor = 'pointer';
+                            }
                             showAlert(res.message || 'Error occurred while saving to server.');
                             fetchSheetData(); 
                         } else {
-                            // On Success: Update local wallet balance (Deduct ONLY from Deposit Wallet)
+                            // 4. SUCCESS: Update Wallet and Make Button 'JOINED' permanently
                             currentUser.depositWallet = depWallet - fee;
                             localStorage.setItem('winCashUser', JSON.stringify(currentUser));
                             updateWalletUI(); 
 
-                            // Modify the Button to successfully JOINED state visually
-                            let updatedBtn = document.getElementById(btnElementId);
-                            if (updatedBtn) {
-                                updatedBtn.parentElement.parentElement.classList.add('joined-card');
-                                updatedBtn.className = 'join-btn-small joined';
-                                updatedBtn.innerHTML = '<i class="fas fa-check-circle"></i> JOINED';
-                                updatedBtn.style.opacity = '1';
-                                updatedBtn.disabled = true;
-                                updatedBtn.style.cursor = 'default';
-                                updatedBtn.onclick = null;
-                                updatedBtn.removeAttribute('onclick');
+                            if (btnEl) {
+                                btnEl.parentElement.parentElement.classList.add('joined-card');
+                                btnEl.className = 'join-btn-small joined';
+                                btnEl.innerHTML = '<i class="fas fa-check-circle"></i> JOINED';
+                                btnEl.style.opacity = '1';
+                                btnEl.disabled = true;
+                                btnEl.style.cursor = 'default';
+                                btnEl.onclick = null;
+                                btnEl.removeAttribute('onclick');
                             }
 
-                            // Inject the transaction locally
+                            // Locally Transaction history update
                             let tempTxn = {
                                 id: "TXN" + generateTxnID(),
                                 type: 'Draw Entry Fee',
@@ -2248,16 +2340,22 @@
                                 dateTime: getCurrentDateTime(),
                                 status: 'Approved'
                             };
+                            
+                            // Save temporarily so fetchSheetData doesn't erase it before Sync
+                            tempLocalTxns.unshift(tempTxn);
                             allTransactions.unshift(tempTxn);
 
                             if(document.getElementById('transactionsView').classList.contains('active')) renderUserTransactions();
                             if(document.getElementById('myDrawsView').classList.contains('active')) renderMyDraws();
 
-                            fetchSheetData(); 
+                            // Delay fetch slightly to allow backend to write to sheet
+                            setTimeout(fetchSheetData, 2000); 
                         }
-                    }, btnElementId); 
+                    }, null); // null is sent so sendPost doesn't override button manipulation here.
                 },
-                function() {}
+                function() {
+                    // CANCEL CLICKED: Do nothing
+                }
             );
         }
 
@@ -2557,29 +2655,42 @@
             container.innerHTML = html;
         }
 
+        // UPDATED Modal Open Logic
         function openDrawModal(drawId=null) {
             editingDrawId = drawId; 
             document.getElementById("drawModal").style.display = "flex";
+            
             if (drawId) { 
                 let d = allDraws.find(x => x.id == drawId); 
                 document.getElementById("drawName").value = d.name; 
                 document.getElementById("entryFee").value = d.fee; 
                 document.getElementById("prizePool").value = d.prize; 
+                
+                // Get local target users
+                document.getElementById("minUsers").value = d.minUsers || localDrawSettings[d.name] || 50; 
             } else { 
                 document.getElementById("drawName").value = ''; 
                 document.getElementById("entryFee").value = ''; 
                 document.getElementById("prizePool").value = ''; 
+                document.getElementById("minUsers").value = '';
             }
         }
 
+        // UPDATED Save Draw Logic
         function saveDraw(btnId) {
             const name = document.getElementById("drawName").value; 
             const fee = document.getElementById("entryFee").value; 
             const prize = document.getElementById("prizePool").value;
+            const minUsers = document.getElementById("minUsers").value;
             
-            if(!name || !fee || !prize) return showAlert("Please fill all details!");
+            if(!name || !fee || !prize || !minUsers) return showAlert("Please fill all details!");
+
+            // Save Minimum Users to LocalStorage mapped by Draw Name
+            localDrawSettings[name] = minUsers;
+            localStorage.setItem('winCashDrawSettings', JSON.stringify(localDrawSettings));
             
-            sendPost({action: 'saveDraw', drawId: editingDrawId, name, fee, prize}, res => { 
+            // Sending it in payload just in case backend gets updated later
+            sendPost({action: 'saveDraw', drawId: editingDrawId, name, fee, prize, minUsers}, res => { 
                 closeAllModals(); 
                 showAlert("Draw Saved Successfully!"); 
                 setTimeout(fetchSheetData, 1000); 
