@@ -1488,14 +1488,31 @@
             if (!currentUser) return;
             let dep = parseInt(currentUser.depositWallet);
             if (isNaN(dep)) dep = parseInt(currentUser.wallet) || 0; 
-            let win = parseInt(currentUser.winningWallet) || 0;
             
-            let tWit = 0;
+            // Dynamic Winning Wallet Calculation to fix Bug 2 (Delay in Sheet Update)
+            let win = parseInt(currentUser.winningWallet) || 0;
+            let totalEarned = 0;
+            let totalWithdrawn = 0;
+            
             allTransactions.forEach(t => {
-                if (t.userId == currentUser.id && t.type == 'Withdrawal' && t.status == 'Approved') {
-                    tWit += parseInt(t.amount);
+                if (t.userId == currentUser.id && t.status === 'Approved') {
+                    if (t.type === 'Winning Prize' || t.type === 'Referral Bonus') {
+                        totalEarned += parseInt(t.amount) || 0;
+                    } else if (t.type === 'Withdrawal') {
+                        totalWithdrawn += parseInt(t.amount) || 0;
+                    }
                 }
             });
+            
+            let calcWin = totalEarned - totalWithdrawn;
+            // Always show the highest available verified balance (prevents lag)
+            if (calcWin > win) {
+                win = calcWin;
+            }
+            
+            currentUser.winningWallet = win; // Store it back to keep it updated
+
+            let tWit = totalWithdrawn;
 
             if(document.getElementById("wallet-balance")) document.getElementById("wallet-balance").innerText = `₹ ${dep + win}`;
             if(document.getElementById("wallet-dep-display")) document.getElementById("wallet-dep-display").innerText = `₹ ${dep}`;
@@ -1604,8 +1621,8 @@
                             
                             allDraws = data.draws;
                             
-                            // Check for newly added live draws safely
-                            let newlyAddedLiveDraws = allDraws.filter(d => d.status === 'LIVE' && !oldKnownDraws.some(oldId => oldId == d.id));
+                            // Check for newly added live draws safely (Bug 3 Fix: String conversion)
+                            let newlyAddedLiveDraws = allDraws.filter(d => d.status === 'LIVE' && !oldKnownDraws.some(oldId => String(oldId) === String(d.id)));
                             
                             // Prevent notification burst on first ever app load for the user
                             if (newlyAddedLiveDraws.length > 0 && oldKnownDraws.length > 0) {
@@ -1619,6 +1636,35 @@
                             
                             // Update known draws locally
                             localStorage.setItem('winCashKnownDraws', JSON.stringify(allDraws.map(d => d.id)));
+                        }
+
+                        // ===========================================
+                        // NEW FEATURE: WINNING PRIZE NOTIFICATION
+                        // ===========================================
+                        if (currentUser) {
+                            let oldKnownTxns = [];
+                            try {
+                                let stored = localStorage.getItem('winCashKnownTxns');
+                                if (stored) {
+                                    oldKnownTxns = JSON.parse(stored);
+                                    if (!Array.isArray(oldKnownTxns)) oldKnownTxns = [];
+                                }
+                            } catch(e) { oldKnownTxns = []; }
+
+                            // Find new Winning Prizes
+                            let newWins = allTransactions.filter(t => t.userId == currentUser.id && t.type === 'Winning Prize' && t.status === 'Approved' && !oldKnownTxns.some(oldId => String(oldId) === String(t.id)));
+
+                            if (newWins.length > 0 && oldKnownTxns.length > 0) {
+                                newWins.forEach(win => {
+                                    showSystemNotification(
+                                        "🏆 Congratulations! You Won!", 
+                                        `आपने ₹${win.amount} जीत लिए हैं! राशि आपके विनिंग वॉलेट में तुरंत जोड़ दी गई है।`
+                                    );
+                                });
+                            }
+
+                            // Update known txns
+                            localStorage.setItem('winCashKnownTxns', JSON.stringify(allTransactions.map(t => t.id)));
                         }
                         
                         if (data.settings) {
@@ -1647,18 +1693,20 @@
                         if (currentUser) {
                             let updatedMe = allUsers.find(u => u.id == currentUser.id);
                             if (updatedMe) {
-                                currentUser = updatedMe;
+                                currentUser = updatedMe; // Update memory with fresh data
                                 localStorage.setItem('winCashUser', JSON.stringify(currentUser));
                             }
-                            updateSidebar();
                         }
                     }
                 } catch(e) {
                     console.error("Data processing failed", e);
                 }
 
-                // MOVED OUTSIDE TRY-CATCH: ALWAYS RE-RENDER TO CLEAR SPINNERS
-                if (currentUser) updateWalletUI();
+                // MOVED OUTSIDE TRY-CATCH: ALWAYS RE-RENDER TO CLEAR SPINNERS & UPDATE EVERYTHING
+                if (currentUser) {
+                    updateSidebar();
+                    updateWalletUI();
+                }
                 if (document.getElementById('homeView').classList.contains('active')) renderLiveDraws();
                 if (document.getElementById('myDrawsView').classList.contains('active')) renderMyDraws();
                 if (document.getElementById('transactionsView').classList.contains('active')) renderUserTransactions();
@@ -1674,7 +1722,10 @@
 
             }).catch(e => {
                 isDataFetching = false;
-                if (currentUser) updateWalletUI();
+                if (currentUser) {
+                    updateSidebar();
+                    updateWalletUI();
+                }
                 if (document.getElementById('homeView').classList.contains('active')) renderLiveDraws();
                 if (document.getElementById('myDrawsView').classList.contains('active')) renderMyDraws();
             });
@@ -3048,7 +3099,12 @@
 
             let savedUser = localStorage.getItem('winCashUser');
             if (savedUser) {
-                try { currentUser = JSON.parse(savedUser); } catch(e) {}
+                try { 
+                    currentUser = JSON.parse(savedUser); 
+                    // BUG 1 FIX: Instantly load Sidebar & Wallet data on start
+                    updateSidebar(); 
+                    updateWalletUI(); 
+                } catch(e) {}
             }
             
             setWalletLoading(); 
