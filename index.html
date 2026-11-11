@@ -1136,11 +1136,28 @@
         const manifestURL = URL.createObjectURL(manifestBlob);
         document.querySelector('head').insertAdjacentHTML('beforeend', `<link rel="manifest" href="${manifestURL}">`);
 
+        // UPDATED: Added notificationclick event to open/focus app when clicked from status bar
         const swCode = `
             self.addEventListener('install', (e) => { self.skipWaiting(); });
             self.addEventListener('activate', (e) => { e.waitUntil(clients.claim()); });
             self.addEventListener('fetch', (e) => { 
                 e.respondWith(fetch(e.request).catch(() => new Response('Offline - Please check your internet connection.'))); 
+            });
+            self.addEventListener('notificationclick', (event) => {
+                event.notification.close();
+                event.waitUntil(
+                    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+                        for (let i = 0; i < clientList.length; i++) {
+                            let client = clientList[i];
+                            if (client.url.includes(self.registration.scope) && 'focus' in client) {
+                                return client.focus();
+                            }
+                        }
+                        if (clients.openWindow) {
+                            return clients.openWindow('/');
+                        }
+                    })
+                );
             });
         `;
         const swBlob = new Blob([swCode], {type: 'application/javascript'});
@@ -1570,7 +1587,29 @@
                         // Preserve local changes across sync lag
                         allTransactions = [...tempLocalTxns, ...serverTxns];
 
-                        if (data.draws) allDraws = data.draws;
+                        // ===========================================
+                        // UPDATED NEW DRAW NOTIFICATION SYSTEM
+                        // ===========================================
+                        if (data.draws) {
+                            let oldKnownDraws = JSON.parse(localStorage.getItem('winCashKnownDraws') || '[]');
+                            allDraws = data.draws;
+                            
+                            // Check for newly added live draws
+                            let newlyAddedLiveDraws = allDraws.filter(d => !oldKnownDraws.includes(d.id) && d.status === 'LIVE');
+                            
+                            // Prevent notification burst on first ever app load for the user
+                            if (newlyAddedLiveDraws.length > 0 && oldKnownDraws.length > 0) {
+                                newlyAddedLiveDraws.forEach(newDraw => {
+                                    showSystemNotification(
+                                        "🎉 New Mega Draw is LIVE!", 
+                                        `नया ड्रा '${newDraw.name}' ज्वाइन करें और ₹${newDraw.prize} जीतें! तुरंत ऐप खोलने के लिए यहाँ टैप करें।`
+                                    );
+                                });
+                            }
+                            
+                            // Update known draws locally
+                            localStorage.setItem('winCashKnownDraws', JSON.stringify(allDraws.map(d => d.id)));
+                        }
                         
                         if (data.settings) {
                             data.settings.forEach(s => { 
@@ -1643,20 +1682,26 @@
             }
         }
 
+        // UPDATED: Attractive System Notification Configuration
         function showSystemNotification(title, bodyText) {
             if (localStorage.getItem('winCashNotifPerm') === 'allowed') {
+                const notifOptions = {
+                    body: bodyText,
+                    icon: 'https://cdn-icons-png.flaticon.com/512/2933/2933116.png',
+                    badge: 'https://cdn-icons-png.flaticon.com/512/2933/2933116.png',
+                    vibrate: [300, 100, 300, 100, 300], // Attractive vibration pattern
+                    requireInteraction: true // Keeps notification visible until interacted
+                };
+
                 if (serviceWorkerReg && serviceWorkerReg.showNotification) {
-                    serviceWorkerReg.showNotification(title, {
-                        body: bodyText,
-                        icon: 'https://cdn-icons-png.flaticon.com/512/2933/2933116.png',
-                        badge: 'https://cdn-icons-png.flaticon.com/512/2933/2933116.png',
-                        vibrate: [200, 100, 200]
-                    });
+                    serviceWorkerReg.showNotification(title, notifOptions);
                 } else if ('Notification' in window && Notification.permission === 'granted') {
-                    new Notification(title, {
-                        body: bodyText,
-                        icon: 'https://cdn-icons-png.flaticon.com/512/2933/2933116.png'
-                    });
+                    let n = new Notification(title, notifOptions);
+                    n.onclick = function(event) {
+                        event.preventDefault();
+                        window.focus(); // Focus app when notification is clicked directly
+                        this.close();
+                    };
                 }
             }
             showAppToast(title, bodyText);
@@ -1718,7 +1763,7 @@
 
             setInterval(() => {
                 fetchSheetData();
-            }, 15000);
+            }, 15000); // Polls every 15 seconds, finds new draws to send attractive notification.
         }
 
         // =====================================
