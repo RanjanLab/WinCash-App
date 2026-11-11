@@ -1563,6 +1563,8 @@
             isDataFetching = true;
             if (SCRIPT_URL === 'YOUR_WEB_APP_URL_HERE') {
                 isDataFetching = false;
+                if (document.getElementById('homeView').classList.contains('active')) renderLiveDraws();
+                if (document.getElementById('myDrawsView').classList.contains('active')) renderMyDraws();
                 return;
             }
             
@@ -1591,11 +1593,19 @@
                         // UPDATED NEW DRAW NOTIFICATION SYSTEM
                         // ===========================================
                         if (data.draws) {
-                            let oldKnownDraws = JSON.parse(localStorage.getItem('winCashKnownDraws') || '[]');
+                            let oldKnownDraws = [];
+                            try {
+                                let stored = localStorage.getItem('winCashKnownDraws');
+                                if (stored) {
+                                    oldKnownDraws = JSON.parse(stored);
+                                    if (!Array.isArray(oldKnownDraws)) oldKnownDraws = [];
+                                }
+                            } catch(e) { oldKnownDraws = []; }
+                            
                             allDraws = data.draws;
                             
-                            // Check for newly added live draws
-                            let newlyAddedLiveDraws = allDraws.filter(d => !oldKnownDraws.includes(d.id) && d.status === 'LIVE');
+                            // Check for newly added live draws safely
+                            let newlyAddedLiveDraws = allDraws.filter(d => d.status === 'LIVE' && !oldKnownDraws.some(oldId => oldId == d.id));
                             
                             // Prevent notification burst on first ever app load for the user
                             if (newlyAddedLiveDraws.length > 0 && oldKnownDraws.length > 0) {
@@ -1640,28 +1650,31 @@
                                 currentUser = updatedMe;
                                 localStorage.setItem('winCashUser', JSON.stringify(currentUser));
                             }
-                            updateWalletUI();
                             updateSidebar();
-                        }
-                        
-                        if (document.getElementById('homeView').classList.contains('active')) renderLiveDraws();
-                        if (document.getElementById('myDrawsView').classList.contains('active')) renderMyDraws();
-                        if (document.getElementById('transactionsView').classList.contains('active')) renderUserTransactions();
-                        if (document.getElementById('myReferralView').classList.contains('active')) renderMyReferrals();
-                        if (document.getElementById('adminView').classList.contains('active')) { 
-                            renderAdminRequests(); 
-                            renderAdminUsers(); 
-                            renderAdminDraws(); 
-                            if (document.getElementById('declareWinnerSec').classList.contains('active')) {
-                                updateAdminDropdown(); 
-                            }
                         }
                     }
                 } catch(e) {
                     console.error("Data processing failed", e);
                 }
+
+                // MOVED OUTSIDE TRY-CATCH: ALWAYS RE-RENDER TO CLEAR SPINNERS
+                if (currentUser) updateWalletUI();
+                if (document.getElementById('homeView').classList.contains('active')) renderLiveDraws();
+                if (document.getElementById('myDrawsView').classList.contains('active')) renderMyDraws();
+                if (document.getElementById('transactionsView').classList.contains('active')) renderUserTransactions();
+                if (document.getElementById('myReferralView').classList.contains('active')) renderMyReferrals();
+                if (document.getElementById('adminView').classList.contains('active')) { 
+                    renderAdminRequests(); 
+                    renderAdminUsers(); 
+                    renderAdminDraws(); 
+                    if (document.getElementById('declareWinnerSec').classList.contains('active')) {
+                        updateAdminDropdown(); 
+                    }
+                }
+
             }).catch(e => {
                 isDataFetching = false;
+                if (currentUser) updateWalletUI();
                 if (document.getElementById('homeView').classList.contains('active')) renderLiveDraws();
                 if (document.getElementById('myDrawsView').classList.contains('active')) renderMyDraws();
             });
@@ -2233,7 +2246,7 @@
         function renderLiveDraws() {
             const container = document.getElementById('live-draws-container'); 
             
-            if (isDataFetching) {
+            if (isDataFetching && allDraws.length === 0) {
                 if(container.innerHTML === '') {
                     container.innerHTML = `<div class="empty-state" style="padding-top:40px;"><i class="fas fa-spinner fa-spin" style="font-size:30px; color:#3b82f6; margin-bottom:15px;"></i><br>Loading Draws... Please Wait</div>`;
                 }
@@ -2248,7 +2261,7 @@
             }
             
             liveDraws.forEach(draw => {
-                const isJoined = allTransactions.some(t => t.userId == currentUser.id && t.type === 'Draw Entry Fee' && t.details.includes(draw.id));
+                const isJoined = currentUser && allTransactions.some(t => t.userId == currentUser.id && t.type === 'Draw Entry Fee' && t.details.includes(draw.id));
                 
                 // Calculate Total Joined for this draw
                 const drawJoinedTxns = allTransactions.filter(t => t.type === 'Draw Entry Fee' && t.details.includes(draw.id));
@@ -2418,7 +2431,7 @@
             }
             container.innerHTML = ''; 
             
-            let myJoinedTxns = allTransactions.filter(t => t.userId == currentUser.id && t.type === 'Draw Entry Fee');
+            let myJoinedTxns = currentUser ? allTransactions.filter(t => t.userId == currentUser.id && t.type === 'Draw Entry Fee') : [];
             
             if (myJoinedTxns.length === 0) {
                 container.innerHTML = `<div class="empty-state">No joined draws.</div>`; 
