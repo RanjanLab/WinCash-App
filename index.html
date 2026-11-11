@@ -1136,24 +1136,11 @@
         const manifestURL = URL.createObjectURL(manifestBlob);
         document.querySelector('head').insertAdjacentHTML('beforeend', `<link rel="manifest" href="${manifestURL}">`);
 
-        // UPDATED: Added click handling to open/focus the app when clicking the notification
         const swCode = `
             self.addEventListener('install', (e) => { self.skipWaiting(); });
             self.addEventListener('activate', (e) => { e.waitUntil(clients.claim()); });
             self.addEventListener('fetch', (e) => { 
                 e.respondWith(fetch(e.request).catch(() => new Response('Offline - Please check your internet connection.'))); 
-            });
-            self.addEventListener('notificationclick', (e) => {
-                e.notification.close();
-                e.waitUntil(
-                    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientsArr => {
-                        if (clientsArr.length > 0) {
-                            return clientsArr[0].focus();
-                        } else {
-                            return clients.openWindow('/');
-                        }
-                    })
-                );
             });
         `;
         const swBlob = new Blob([swCode], {type: 'application/javascript'});
@@ -1406,7 +1393,6 @@
         
         // Local Storage Object for Minimum Users Data
         let localDrawSettings = JSON.parse(localStorage.getItem('winCashDrawSettings')) || {};
-        let notifiedDraws = JSON.parse(localStorage.getItem('notifiedDraws')) || [];
 
         // Custom Select Logic
         window.addEventListener('click', function(e) {
@@ -1586,9 +1572,6 @@
 
                         if (data.draws) allDraws = data.draws;
                         
-                        // Check & Trigger Attractive Lucky Draw Notification if there's any new LIVE draw
-                        checkAndNotifyLiveDraw();
-
                         if (data.settings) {
                             data.settings.forEach(s => { 
                                 if (appSettings[s.key] !== undefined) appSettings[s.key] = s.value; 
@@ -1677,35 +1660,6 @@
                 }
             }
             showAppToast(title, bodyText);
-        }
-
-        // UPDATED: Attractive System Notification specific for Lucky Draws
-        function checkAndNotifyLiveDraw() {
-            if (localStorage.getItem('winCashNotifPerm') !== 'allowed') return;
-            let liveDraws = allDraws.filter(d => d.status === 'LIVE');
-            liveDraws.forEach(draw => {
-                if (!notifiedDraws.includes(draw.id)) {
-                    let title = "🎰 मेगा जैकपॉट लाइव है! 💸";
-                    let body = `${draw.name} में सिर्फ ₹${draw.fee} में ज्वाइन करें और ₹${draw.prize} तक कैश जीतें! जल्दी करें, स्लॉट्स भर रहे हैं! 🚀`;
-                    
-                    if (serviceWorkerReg && serviceWorkerReg.showNotification) {
-                        serviceWorkerReg.showNotification(title, {
-                            body: body,
-                            icon: 'https://cdn-icons-png.flaticon.com/512/2933/2933116.png',
-                            badge: 'https://cdn-icons-png.flaticon.com/512/2933/2933116.png',
-                            vibrate: [500, 200, 500, 200, 500], // Attractive vibration pattern
-                            requireInteraction: true // Requires user interaction to dismiss
-                        });
-                    } else if ('Notification' in window && Notification.permission === 'granted') {
-                        new Notification(title, { 
-                            body: body, 
-                            icon: 'https://cdn-icons-png.flaticon.com/512/2933/2933116.png' 
-                        });
-                    }
-                    notifiedDraws.push(draw.id);
-                }
-            });
-            localStorage.setItem('notifiedDraws', JSON.stringify(notifiedDraws));
         }
 
         function saveAnnouncement() {
