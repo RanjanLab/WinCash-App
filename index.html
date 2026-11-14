@@ -1494,34 +1494,38 @@
             if (!currentUser) return;
             let dep = parseInt(currentUser.depositWallet);
             if (isNaN(dep)) dep = parseInt(currentUser.wallet) || 0; 
+            dep = Math.max(0, dep);
             
-            let win = parseInt(currentUser.winningWallet) || 0;
             let totalEarned = 0;
-            let totalWithdrawn = 0;
+            let totalWithdrawnOrPending = 0;
+            let approvedWithdrawn = 0;
             
             allTransactions.forEach(t => {
-                if (t.userId == currentUser.id && t.status === 'Approved') {
-                    if (t.type === 'Winning Prize' || t.type === 'Referral Bonus') {
-                        totalEarned += parseInt(t.amount) || 0;
-                    } else if (t.type === 'Withdrawal') {
-                        totalWithdrawn += parseInt(t.amount) || 0;
+                if (t.userId == currentUser.id) {
+                    if (t.status === 'Approved') {
+                        if (t.type === 'Winning Prize' || t.type === 'Referral Bonus') {
+                            totalEarned += parseInt(t.amount) || 0;
+                        } else if (t.type === 'Withdrawal') {
+                            totalWithdrawnOrPending += parseInt(t.amount) || 0;
+                            approvedWithdrawn += parseInt(t.amount) || 0;
+                        }
+                    } else if (t.status === 'Pending' && t.type === 'Withdrawal') {
+                        totalWithdrawnOrPending += parseInt(t.amount) || 0;
                     }
                 }
             });
             
-            let calcWin = totalEarned - totalWithdrawn;
-            if (calcWin > win) {
-                win = calcWin;
-            }
+            let calcWin = totalEarned - totalWithdrawnOrPending;
+            let win = Math.max(0, calcWin);
             currentUser.winningWallet = win;
-            let tWit = totalWithdrawn;
+            currentUser.depositWallet = dep;
 
             if(document.getElementById("wallet-balance")) document.getElementById("wallet-balance").innerText = `₹ ${dep + win}`;
             if(document.getElementById("wallet-dep-display")) document.getElementById("wallet-dep-display").innerText = `₹ ${dep}`;
             if(document.getElementById("wallet-win-display")) document.getElementById("wallet-win-display").innerText = `₹ ${win}`;
             if(document.getElementById("txtWitBal")) document.getElementById("txtWitBal").innerText = win;
             if (document.getElementById("total-lifetime-withdrawal")) {
-                document.getElementById("total-lifetime-withdrawal").innerText = `₹ ${tWit}`;
+                document.getElementById("total-lifetime-withdrawal").innerText = `₹ ${approvedWithdrawn}`;
             }
         }
 
@@ -1682,7 +1686,8 @@
                         if (currentUser) {
                             let updatedMe = allUsers.find(u => u.id == currentUser.id);
                             if (updatedMe) {
-                                currentUser = updatedMe;
+                                currentUser.depositWallet = Math.max(0, parseInt(updatedMe.depositWallet) || 0);
+                                currentUser.winningWallet = Math.max(0, parseInt(updatedMe.winningWallet) || 0);
                                 localStorage.setItem('winCashUser', JSON.stringify(currentUser));
                             }
                         }
@@ -1800,6 +1805,8 @@
             sendPost({action: 'login', phone, password: pass}, res => {
                 if (res.status === 'success') {
                     currentUser = res.user; 
+                    currentUser.depositWallet = Math.max(0, parseInt(currentUser.depositWallet) || 0);
+                    currentUser.winningWallet = Math.max(0, parseInt(currentUser.winningWallet) || 0);
                     localStorage.setItem('winCashUser', JSON.stringify(currentUser));
                     updateSidebar(); 
                     switchView('homeView', true, true); 
@@ -1831,7 +1838,7 @@
                 if (res.status === 'success') {
                     currentUser = {
                         id: res.userId, name, phone, email, password: pass, 
-                        depositWallet: appSettings.welcomeBonus, winningWallet: 0, bank: "", upi: ""
+                        depositWallet: Math.max(0, parseInt(appSettings.welcomeBonus) || 0), winningWallet: 0, bank: "", upi: ""
                     };
                     localStorage.setItem('winCashUser', JSON.stringify(currentUser));
                     updateSidebar(); 
@@ -1945,7 +1952,7 @@
         }
 
         // =====================================
-        // WITHDRAW FUNCTION
+        // WITHDRAW FUNCTION (STRICT BALANCE CHECK & NO NEGATIVE ALLOWED)
         // =====================================
         function submitWithdraw(btnId) {
             if (!currentUser.bank && !currentUser.upi) {
@@ -1961,17 +1968,34 @@
             }
             
             document.getElementById('witMinError').style.display = 'none';
+            
             let winWallet = parseInt(currentUser.winningWallet) || 0;
-            if (amt > winWallet) return showAlert('Insufficient Winning Wallet Balance!');
+            if (amt > winWallet || winWallet <= 0) {
+                return showAlert('Insufficient Winning Wallet Balance!');
+            }
             
             sendPost({
                 action: 'addTransaction', id: generateTxnID(), type: 'Withdrawal', 
                 user: currentUser.name, userId: currentUser.id, amount: amt, 
                 details: `Transfer to Bank/UPI`, upiId: currentUser.upi || '', dateTime: getCurrentDateTime()
             }, res => {
-                currentUser.winningWallet = winWallet - amt; 
+                currentUser.winningWallet = Math.max(0, winWallet - amt); 
                 localStorage.setItem('winCashUser', JSON.stringify(currentUser));
                 
+                let tempTxn = {
+                    id: "TXN" + generateTxnID(),
+                    type: 'Withdrawal',
+                    userId: currentUser.id,
+                    userName: currentUser.name,
+                    amount: amt,
+                    details: `Transfer to Bank/UPI`,
+                    dateTime: getCurrentDateTime(),
+                    status: 'Pending'
+                };
+                tempLocalTxns.unshift(tempTxn);
+                allTransactions.unshift(tempTxn);
+                updateWalletUI();
+
                 document.getElementById('witPageView1').style.display = 'none';
                 document.getElementById('witPageView2').style.display = 'block';
                 
@@ -2378,7 +2402,7 @@
                             showAlert(res.message || 'Error occurred while saving to server.');
                             fetchSheetData(); 
                         } else {
-                            currentUser.depositWallet = depWallet - fee;
+                            currentUser.depositWallet = Math.max(0, depWallet - fee);
                             localStorage.setItem('winCashUser', JSON.stringify(currentUser));
                             updateWalletUI(); 
 
@@ -2598,14 +2622,14 @@
                 req.remark = remarkText;
                 
                 if (currentUser && req.userId == currentUser.id) {
-                    currentUser.depositWallet = (parseInt(currentUser.depositWallet) || 0) + parseInt(req.amount);
+                    currentUser.depositWallet = Math.max(0, (parseInt(currentUser.depositWallet) || 0) + parseInt(req.amount));
                     localStorage.setItem('winCashUser', JSON.stringify(currentUser));
                     updateWalletUI();
                 }
                 
                 let targetUser = allUsers.find(u => u.id == req.userId);
                 if (targetUser) {
-                    targetUser.depositWallet = (parseInt(targetUser.depositWallet) || 0) + parseInt(req.amount);
+                    targetUser.depositWallet = Math.max(0, (parseInt(targetUser.depositWallet) || 0) + parseInt(req.amount));
                 }
 
                 sendPost({action: 'adminTxnAction', txnId, status, remark: remarkText}, res => { 
@@ -2625,13 +2649,13 @@
 
                 if (status === 'Approved' && req.type === 'Deposit') {
                     if (currentUser && req.userId == currentUser.id) {
-                        currentUser.depositWallet = (parseInt(currentUser.depositWallet) || 0) + parseInt(req.amount);
+                        currentUser.depositWallet = Math.max(0, (parseInt(currentUser.depositWallet) || 0) + parseInt(req.amount));
                         localStorage.setItem('winCashUser', JSON.stringify(currentUser));
                         updateWalletUI();
                     }
                     let targetUser = allUsers.find(u => u.id == req.userId);
                     if (targetUser) {
-                        targetUser.depositWallet = (parseInt(targetUser.depositWallet) || 0) + parseInt(req.amount);
+                        targetUser.depositWallet = Math.max(0, (parseInt(targetUser.depositWallet) || 0) + parseInt(req.amount));
                     }
                 }
 
@@ -2656,7 +2680,8 @@
             
             filteredList.forEach(u => {
                 let depW = parseInt(u.depositWallet); if(isNaN(depW)) depW = parseInt(u.wallet) || 0;
-                let winW = parseInt(u.winningWallet) || 0;
+                depW = Math.max(0, depW);
+                let winW = Math.max(0, parseInt(u.winningWallet) || 0);
                 
                 container.innerHTML += `
                 <div class="draw-card" style="text-align: left;">
@@ -2937,6 +2962,21 @@
             }, btnId);
         }
 
+        function openUserModal(uId) {
+            editingUserId = uId;
+            let u = allUsers.find(x => x.id == uId);
+            if(!u) return;
+
+            document.getElementById("editUserName").value = u.name || '';
+            document.getElementById("editUserPhone").value = u.phone || '';
+            document.getElementById("editUserEmail").value = u.email || '';
+            document.getElementById("editUserPassword").value = u.password || '';
+            document.getElementById("editUserBank").value = u.bank || '';
+            document.getElementById("editUserUpi").value = u.upi || '';
+
+            document.getElementById("userModal").style.display = "flex";
+        }
+
         function saveUser(btnId) {
             const name = document.getElementById("editUserName").value; 
             const phone = document.getElementById("editUserPhone").value.trim();
@@ -3046,6 +3086,8 @@
             if (savedUser) {
                 try { 
                     currentUser = JSON.parse(savedUser); 
+                    currentUser.depositWallet = Math.max(0, parseInt(currentUser.depositWallet) || 0);
+                    currentUser.winningWallet = Math.max(0, parseInt(currentUser.winningWallet) || 0);
                     updateSidebar(); 
                     updateWalletUI(); 
                 } catch(e) {}
