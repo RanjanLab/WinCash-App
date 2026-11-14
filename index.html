@@ -550,7 +550,7 @@
                 <input type="number" id="prizePool" placeholder="e.g. 10000">
             </div>
             <div class="input-group">
-                <label>Minimum Users Required (Target)</label>
+                <label>Target (Minimum Users Required)</label>
                 <input type="number" id="minUsers" placeholder="e.g. 50">
             </div>
             <button id="btnSaveDraw" class="submit-btn" onclick="saveDraw('btnSaveDraw')">SAVE DRAW</button>
@@ -2255,7 +2255,7 @@
         }
 
         // =====================================
-        // DRAW ACTIONS (PER-DRAW TARGET & JOIN)
+        // DRAW ACTIONS (LOCAL PER-DRAW TARGET & DUPLICATE JOIN PROTECTION)
         // =====================================
         function renderLiveDraws() {
             const container = document.getElementById('live-draws-container'); 
@@ -2274,8 +2274,15 @@
                 return; 
             }
             
+            let localDrawTargets = JSON.parse(localStorage.getItem('winCashDrawTargets')) || {};
+            let joinedDrawsKey = currentUser ? `winCashJoinedDraws_${currentUser.id}` : 'winCashJoinedDraws';
+            let localJoinedDraws = JSON.parse(localStorage.getItem(joinedDrawsKey)) || [];
+
             liveDraws.forEach(draw => {
-                const isJoined = currentUser && allTransactions.some(t => t.userId == currentUser.id && t.type === 'Draw Entry Fee' && t.details.includes(draw.id));
+                const isJoined = currentUser && (
+                    localJoinedDraws.includes(String(draw.id)) || 
+                    allTransactions.some(t => t.userId == currentUser.id && t.type === 'Draw Entry Fee' && t.details.includes(draw.id))
+                );
                 
                 const drawJoinedTxns = allTransactions.filter(t => t.type === 'Draw Entry Fee' && t.details.includes(draw.id));
                 const drawJoinedCount = new Set(drawJoinedTxns.map(t => t.userId)).size;
@@ -2285,8 +2292,8 @@
                     : `<button id="btnJoin_${draw.id}" class="join-btn-small" onclick="joinDraw('${draw.id}', 'btnJoin_${draw.id}')"><i class="fas fa-check-circle"></i> JOIN</button>`;
                 const cardClass = isJoined ? 'draw-row-card joined-card' : 'draw-row-card';
 
-                // Per-draw unique target (draw.minUsers)
-                let minReq = parseInt(draw.minUsers) || 50; 
+                // Unique target per draw from localStorage (fallback to draw.minUsers or 50)
+                let minReq = parseInt(localDrawTargets[draw.id]) || parseInt(draw.minUsers) || 50; 
                 let progressPercent = Math.min((drawJoinedCount / minReq) * 100, 100);
                 
                 let progressColorClass = '';
@@ -2340,9 +2347,16 @@
         }
 
         // =====================================
-        // JOIN DRAW LOGIC
+        // JOIN DRAW LOGIC WITH DUPLICATE PROTECTION
         // =====================================
         function joinDraw(drawId, btnElementId) {
+            let joinedDrawsKey = currentUser ? `winCashJoinedDraws_${currentUser.id}` : 'winCashJoinedDraws';
+            let localJoinedDraws = JSON.parse(localStorage.getItem(joinedDrawsKey)) || [];
+
+            if (localJoinedDraws.includes(String(drawId))) {
+                return showAlert('You have already joined this draw!');
+            }
+
             let btnEl = document.getElementById(btnElementId);
             if (btnEl && (btnEl.disabled || btnEl.classList.contains('joined'))) return;
 
@@ -2360,23 +2374,29 @@
             
             showConfirm(`क्या आप सच में ${draw.name} को ₹${draw.fee} में जॉइन करना चाहते हैं?`, 
                 function() {
-                    let originalText = btnEl ? btnEl.innerHTML : `<i class="fas fa-check-circle"></i> JOIN`;
-                    
+                    // Instant disable to prevent duplicate clicks
                     if (btnEl) {
                         btnEl.disabled = true;
-                        btnEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> PLEASE WAIT...';
+                        btnEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> JOINING...';
                         btnEl.style.opacity = '0.8';
                         btnEl.style.cursor = 'not-allowed';
                     }
+
+                    // Save immediately to local storage to lock out further attempts
+                    localJoinedDraws.push(String(drawId));
+                    localStorage.setItem(joinedDrawsKey, JSON.stringify(localJoinedDraws));
 
                     sendPost({
                         action: 'joinDraw', drawId: drawId, drawName: draw.name, userId: currentUser.id, 
                         userName: currentUser.name, fee: draw.fee, dateTime: getCurrentDateTime()
                     }, res => {
                         if(res && res.status === 'error') {
+                            // Revert local join on failure
+                            let idx = localJoinedDraws.indexOf(String(drawId));
+                            if(idx > -1) { localJoinedDraws.splice(idx, 1); localStorage.setItem(joinedDrawsKey, JSON.stringify(localJoinedDraws)); }
                             if (btnEl) {
                                 btnEl.disabled = false;
-                                btnEl.innerHTML = originalText;
+                                btnEl.innerHTML = '<i class="fas fa-check-circle"></i> JOIN';
                                 btnEl.style.opacity = '1';
                                 btnEl.style.cursor = 'pointer';
                             }
@@ -2687,6 +2707,7 @@
                 return;
             }
 
+            let localDrawTargets = JSON.parse(localStorage.getItem('winCashDrawTargets')) || {};
             let liveDraws = allDraws.filter(d => d.status === 'LIVE');
             let compDraws = allDraws.filter(d => d.status === 'COMPLETED');
             
@@ -2694,10 +2715,11 @@
             if(liveDraws.length === 0) html += '<p style="font-size:13px; color:#64748b; margin-bottom:15px; text-align:left;">No Live Draws.</p>';
             
             liveDraws.forEach(draw => {
+                let targetVal = localDrawTargets[draw.id] || draw.minUsers || 50;
                 html += `
                 <div class="draw-card" style="text-align: left; border-left: 4px solid #10b981;">
                     <div style="font-weight:700; font-size: 16px; margin-bottom: 5px;">${draw.name} <span class="draw-status" style="float:right;">LIVE</span></div>
-                    <div style="font-size:13px; margin-bottom: 10px; color:#475569;">ID: ${draw.id} | Fee: ₹${draw.fee} | Prize: ₹${draw.prize} | Target: ${draw.minUsers || 50}</div>
+                    <div style="font-size:13px; margin-bottom: 10px; color:#475569;">ID: ${draw.id} | Fee: ₹${draw.fee} | Prize: ₹${draw.prize} | Target: ${targetVal}</div>
                     <div class="admin-action-group">
                         <button class="btn-action btn-edit" onclick="openDrawModal('${draw.id}')">Edit</button>
                         <button id="btnDelDraw_${draw.id}" class="btn-action btn-reject" onclick="deleteDraw('${draw.id}', 'btnDelDraw_${draw.id}')">Delete</button>
@@ -2726,12 +2748,13 @@
             editingDrawId = drawId; 
             document.getElementById("drawModal").style.display = "flex";
             
+            let localDrawTargets = JSON.parse(localStorage.getItem('winCashDrawTargets')) || {};
             if (drawId) { 
                 let d = allDraws.find(x => x.id == drawId); 
                 document.getElementById("drawName").value = d.name; 
                 document.getElementById("entryFee").value = d.fee; 
                 document.getElementById("prizePool").value = d.prize; 
-                document.getElementById("minUsers").value = d.minUsers || 50; 
+                document.getElementById("minUsers").value = localDrawTargets[drawId] || d.minUsers || 50; 
             } else { 
                 document.getElementById("drawName").value = ''; 
                 document.getElementById("entryFee").value = ''; 
@@ -2748,6 +2771,12 @@
             
             if(!name || !fee || !prize || !minUsers) return showAlert("Please fill all details!");
 
+            // Save target per-draw uniquely in localStorage without requiring sheet backend support
+            let targetKeyId = editingDrawId || ('DRAW_' + Date.now());
+            let localDrawTargets = JSON.parse(localStorage.getItem('winCashDrawTargets')) || {};
+            localDrawTargets[targetKeyId] = minUsers;
+            localStorage.setItem('winCashDrawTargets', JSON.stringify(localDrawTargets));
+
             sendPost({action: 'saveDraw', drawId: editingDrawId, name, fee, prize, minUsers}, res => { 
                 closeAllModals(); 
                 showAlert("Draw Saved Successfully!"); 
@@ -2757,6 +2786,10 @@
 
         function deleteDraw(drawId, btnElement) { 
             showConfirm("Delete this Draw completely?", () => { 
+                let localDrawTargets = JSON.parse(localStorage.getItem('winCashDrawTargets')) || {};
+                delete localDrawTargets[drawId];
+                localStorage.setItem('winCashDrawTargets', JSON.stringify(localDrawTargets));
+
                 sendPost({action: 'deleteDraw', drawId}, r => { setTimeout(fetchSheetData, 1000); }, btnElement); 
             }); 
         }
