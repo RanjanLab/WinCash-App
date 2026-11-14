@@ -550,7 +550,7 @@
                 <input type="number" id="prizePool" placeholder="e.g. 10000">
             </div>
             <div class="input-group">
-                <label>Minimum Users Required</label>
+                <label>Minimum Users Required (Target)</label>
                 <input type="number" id="minUsers" placeholder="e.g. 50">
             </div>
             <button id="btnSaveDraw" class="submit-btn" onclick="saveDraw('btnSaveDraw')">SAVE DRAW</button>
@@ -1351,7 +1351,6 @@
         let currentWinnerMode = 'manual';
         let isDataFetching = true;
         let tempLocalTxns = []; 
-        let localDrawSettings = JSON.parse(localStorage.getItem('winCashDrawSettings')) || {};
 
         // ==========================================
         // BANNER SLIDER LOGIC (AUTO & MANUAL SLIDE + SWIPE)
@@ -1492,40 +1491,22 @@
 
         function updateWalletUI() {
             if (!currentUser) return;
-            let dep = parseInt(currentUser.depositWallet);
-            if (isNaN(dep)) dep = parseInt(currentUser.wallet) || 0; 
-            dep = Math.max(0, dep);
+            let dep = Math.max(0, parseInt(currentUser.depositWallet) || 0);
+            let win = Math.max(0, parseInt(currentUser.winningWallet) || 0);
             
-            let totalEarned = 0;
-            let totalWithdrawnOrPending = 0;
-            let approvedWithdrawn = 0;
-            
+            let totalApprovedWithdrawn = 0;
             allTransactions.forEach(t => {
-                if (t.userId == currentUser.id) {
-                    if (t.status === 'Approved') {
-                        if (t.type === 'Winning Prize' || t.type === 'Referral Bonus') {
-                            totalEarned += parseInt(t.amount) || 0;
-                        } else if (t.type === 'Withdrawal') {
-                            totalWithdrawnOrPending += parseInt(t.amount) || 0;
-                            approvedWithdrawn += parseInt(t.amount) || 0;
-                        }
-                    } else if (t.status === 'Pending' && t.type === 'Withdrawal') {
-                        totalWithdrawnOrPending += parseInt(t.amount) || 0;
-                    }
+                if (t.userId == currentUser.id && t.status === 'Approved' && t.type === 'Withdrawal') {
+                    totalApprovedWithdrawn += parseInt(t.amount) || 0;
                 }
             });
-            
-            let calcWin = totalEarned - totalWithdrawnOrPending;
-            let win = Math.max(0, calcWin);
-            currentUser.winningWallet = win;
-            currentUser.depositWallet = dep;
 
             if(document.getElementById("wallet-balance")) document.getElementById("wallet-balance").innerText = `₹ ${dep + win}`;
             if(document.getElementById("wallet-dep-display")) document.getElementById("wallet-dep-display").innerText = `₹ ${dep}`;
             if(document.getElementById("wallet-win-display")) document.getElementById("wallet-win-display").innerText = `₹ ${win}`;
             if(document.getElementById("txtWitBal")) document.getElementById("txtWitBal").innerText = win;
             if (document.getElementById("total-lifetime-withdrawal")) {
-                document.getElementById("total-lifetime-withdrawal").innerText = `₹ ${approvedWithdrawn}`;
+                document.getElementById("total-lifetime-withdrawal").innerText = `₹ ${totalApprovedWithdrawn}`;
             }
         }
 
@@ -1969,7 +1950,7 @@
             
             document.getElementById('witMinError').style.display = 'none';
             
-            let winWallet = parseInt(currentUser.winningWallet) || 0;
+            let winWallet = Math.max(0, parseInt(currentUser.winningWallet) || 0);
             if (amt > winWallet || winWallet <= 0) {
                 return showAlert('Insufficient Winning Wallet Balance!');
             }
@@ -2274,7 +2255,7 @@
         }
 
         // =====================================
-        // DRAW ACTIONS (PRIZE POOL ON LEFT, ENTRY FEE ON RIGHT, BUTTON 'JOIN')
+        // DRAW ACTIONS (PER-DRAW TARGET & JOIN)
         // =====================================
         function renderLiveDraws() {
             const container = document.getElementById('live-draws-container'); 
@@ -2304,7 +2285,8 @@
                     : `<button id="btnJoin_${draw.id}" class="join-btn-small" onclick="joinDraw('${draw.id}', 'btnJoin_${draw.id}')"><i class="fas fa-check-circle"></i> JOIN</button>`;
                 const cardClass = isJoined ? 'draw-row-card joined-card' : 'draw-row-card';
 
-                let minReq = draw.minUsers || localDrawSettings[draw.name] || 50; 
+                // Per-draw unique target (draw.minUsers)
+                let minReq = parseInt(draw.minUsers) || 50; 
                 let progressPercent = Math.min((drawJoinedCount / minReq) * 100, 100);
                 
                 let progressColorClass = '';
@@ -2314,8 +2296,8 @@
                 const progressBarHtml = `
                     <div style="width: 100%; margin-top: 5px; margin-bottom: 5px;">
                         <div class="progress-text">
-                            <span style="color: #3b82f6;"><i class="fas fa-users"></i> ${drawJoinedCount} Joined</span>
-                            <span>Target: ${minReq}</span>
+                            <span style="color: #3b82f6;"><i class="fas fa-users"></i> ${drawJoinedCount} JOINED</span>
+                            <span>TARGET: ${minReq}</span>
                         </div>
                         <div class="progress-container">
                             <div class="progress-bar ${progressColorClass}" style="width: ${progressPercent}%;"></div>
@@ -2368,8 +2350,7 @@
             if (!draw) return;
             
             let fee = parseInt(draw.fee);
-            let depWallet = parseInt(currentUser.depositWallet);
-            if (isNaN(depWallet)) depWallet = parseInt(currentUser.wallet) || 0;
+            let depWallet = Math.max(0, parseInt(currentUser.depositWallet) || 0);
 
             if (depWallet < fee) {
                 return showConfirm(`डिपॉजिट वॉलेट में पर्याप्त बैलेंस नहीं है, क्या आप बैलेंस डिपॉजिट करना चाहते हैं?`, function() {
@@ -2716,7 +2697,7 @@
                 html += `
                 <div class="draw-card" style="text-align: left; border-left: 4px solid #10b981;">
                     <div style="font-weight:700; font-size: 16px; margin-bottom: 5px;">${draw.name} <span class="draw-status" style="float:right;">LIVE</span></div>
-                    <div style="font-size:13px; margin-bottom: 10px; color:#475569;">ID: ${draw.id} | Fee: ₹${draw.fee} | Prize: ₹${draw.prize}</div>
+                    <div style="font-size:13px; margin-bottom: 10px; color:#475569;">ID: ${draw.id} | Fee: ₹${draw.fee} | Prize: ₹${draw.prize} | Target: ${draw.minUsers || 50}</div>
                     <div class="admin-action-group">
                         <button class="btn-action btn-edit" onclick="openDrawModal('${draw.id}')">Edit</button>
                         <button id="btnDelDraw_${draw.id}" class="btn-action btn-reject" onclick="deleteDraw('${draw.id}', 'btnDelDraw_${draw.id}')">Delete</button>
@@ -2750,7 +2731,7 @@
                 document.getElementById("drawName").value = d.name; 
                 document.getElementById("entryFee").value = d.fee; 
                 document.getElementById("prizePool").value = d.prize; 
-                document.getElementById("minUsers").value = d.minUsers || localDrawSettings[d.name] || 50; 
+                document.getElementById("minUsers").value = d.minUsers || 50; 
             } else { 
                 document.getElementById("drawName").value = ''; 
                 document.getElementById("entryFee").value = ''; 
@@ -2767,9 +2748,6 @@
             
             if(!name || !fee || !prize || !minUsers) return showAlert("Please fill all details!");
 
-            localDrawSettings[name] = minUsers;
-            localStorage.setItem('winCashDrawSettings', JSON.stringify(localDrawSettings));
-            
             sendPost({action: 'saveDraw', drawId: editingDrawId, name, fee, prize, minUsers}, res => { 
                 closeAllModals(); 
                 showAlert("Draw Saved Successfully!"); 
