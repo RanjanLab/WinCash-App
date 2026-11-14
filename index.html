@@ -1126,7 +1126,6 @@
         const manifestURL = URL.createObjectURL(manifestBlob);
         document.querySelector('head').insertAdjacentHTML('beforeend', `<link rel="manifest" href="${manifestURL}">`);
 
-        // UPDATED: Added notificationclick event to open/focus app when clicked from status bar
         const swCode = `
             self.addEventListener('install', (e) => { self.skipWaiting(); });
             self.addEventListener('activate', (e) => { e.waitUntil(clients.claim()); });
@@ -1233,7 +1232,7 @@
         }
 
         // ==========================================
-        // YAHAN APNA APPS SCRIPT WEB APP URL DALEIN
+        // APPS SCRIPT WEB APP URL
         // ==========================================
         const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwHI2rEGDaAv-PnK3bRBj0mV5SayOYRrLwJtwceYjzXqdTJLb5_91CacBVd9sJcPYLP/exec';
 
@@ -1301,7 +1300,7 @@
             let yesBtn = document.getElementById('confirmYesBtn');
             let newYesBtn = yesBtn.cloneNode(true);
             yesBtn.parentNode.replaceChild(newYesBtn, yesBtn);
-            newYesBtn.disabled = false; // Ensure button is active
+            newYesBtn.disabled = false;
             newYesBtn.innerHTML = 'YES';
             
             let noBtn = document.getElementById('confirmNoBtn');
@@ -1309,8 +1308,8 @@
             noBtn.parentNode.replaceChild(newNoBtn, noBtn);
             
             newYesBtn.onclick = function() {
-                if (this.disabled) return; // Stop Double click
-                this.disabled = true; // Instantly lock
+                if (this.disabled) return;
+                this.disabled = true;
                 this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; 
                 document.getElementById('customConfirm').style.display = 'none'; 
                 if(onConfirm) onConfirm(); 
@@ -1391,14 +1390,9 @@
         let editingDrawId = null; 
         let editingUserId = null;
         
-        // Winner Selection Mode
         let currentWinnerMode = 'manual';
-        
-        // Control Data Syncing Flags
         let isDataFetching = true;
-        let tempLocalTxns = []; // For preventing Google Sheets Sync Lag issues
-        
-        // Local Storage Object for Minimum Users Data
+        let tempLocalTxns = []; 
         let localDrawSettings = JSON.parse(localStorage.getItem('winCashDrawSettings')) || {};
 
         // Custom Select Logic
@@ -1458,14 +1452,6 @@
             }
         }
 
-        function getTotalWallet() {
-            if (!currentUser) return 0;
-            let dep = parseInt(currentUser.depositWallet);
-            if (isNaN(dep)) dep = parseInt(currentUser.wallet) || 0; 
-            let win = parseInt(currentUser.winningWallet) || 0;
-            return dep + win;
-        }
-
         function setWalletLoading() {
             let spin = '<i class="fas fa-spinner fa-spin"></i>';
             if(document.getElementById("wallet-balance")) document.getElementById("wallet-balance").innerHTML = spin;
@@ -1479,7 +1465,6 @@
             let dep = parseInt(currentUser.depositWallet);
             if (isNaN(dep)) dep = parseInt(currentUser.wallet) || 0; 
             
-            // Dynamic Winning Wallet Calculation to fix Bug 2 (Delay in Sheet Update)
             let win = parseInt(currentUser.winningWallet) || 0;
             let totalEarned = 0;
             let totalWithdrawn = 0;
@@ -1495,13 +1480,10 @@
             });
             
             let calcWin = totalEarned - totalWithdrawn;
-            // Always show the highest available verified balance (prevents lag)
             if (calcWin > win) {
                 win = calcWin;
             }
-            
-            currentUser.winningWallet = win; // Store it back to keep it updated
-
+            currentUser.winningWallet = win;
             let tWit = totalWithdrawn;
 
             if(document.getElementById("wallet-balance")) document.getElementById("wallet-balance").innerText = `₹ ${dep + win}`;
@@ -1562,7 +1544,7 @@
             })
             .catch(e => { 
                 resetBtn(btnEl, originalText);
-                callback({ status: 'success' }); 
+                callback({ status: 'error', message: 'Network error. Please try again.' }); 
             });
         }
 
@@ -1588,17 +1570,12 @@
                         let reqs = data.requests || [];
                         let serverTxns = [...txns, ...reqs].reverse();
 
-                        // Filter out local temp txns that have now been confirmed in server fetch
                         tempLocalTxns = tempLocalTxns.filter(temp => {
                             return !serverTxns.some(st => st.userId == temp.userId && st.type === temp.type && st.details === temp.details);
                         });
 
-                        // Preserve local changes across sync lag
                         allTransactions = [...tempLocalTxns, ...serverTxns];
 
-                        // ===========================================
-                        // UPDATED NEW DRAW NOTIFICATION SYSTEM
-                        // ===========================================
                         if (data.draws) {
                             let oldKnownDraws = [];
                             try {
@@ -1611,10 +1588,8 @@
                             
                             allDraws = data.draws;
                             
-                            // Check for newly added live draws safely (Bug 3 Fix: String conversion)
                             let newlyAddedLiveDraws = allDraws.filter(d => d.status === 'LIVE' && !oldKnownDraws.some(oldId => String(oldId) === String(d.id)));
                             
-                            // Prevent notification burst on first ever app load for the user
                             if (newlyAddedLiveDraws.length > 0 && oldKnownDraws.length > 0) {
                                 newlyAddedLiveDraws.forEach(newDraw => {
                                     showSystemNotification(
@@ -1624,13 +1599,9 @@
                                 });
                             }
                             
-                            // Update known draws locally
                             localStorage.setItem('winCashKnownDraws', JSON.stringify(allDraws.map(d => d.id)));
                         }
 
-                        // ===========================================
-                        // NEW FEATURE: WINNING PRIZE NOTIFICATION
-                        // ===========================================
                         if (currentUser) {
                             let oldKnownTxns = [];
                             try {
@@ -1641,7 +1612,6 @@
                                 }
                             } catch(e) { oldKnownTxns = []; }
 
-                            // Find new Winning Prizes
                             let newWins = allTransactions.filter(t => t.userId == currentUser.id && t.type === 'Winning Prize' && t.status === 'Approved' && !oldKnownTxns.some(oldId => String(oldId) === String(t.id)));
 
                             if (newWins.length > 0 && oldKnownTxns.length > 0) {
@@ -1653,7 +1623,6 @@
                                 });
                             }
 
-                            // Update known txns
                             localStorage.setItem('winCashKnownTxns', JSON.stringify(allTransactions.map(t => t.id)));
                         }
                         
@@ -1683,7 +1652,7 @@
                         if (currentUser) {
                             let updatedMe = allUsers.find(u => u.id == currentUser.id);
                             if (updatedMe) {
-                                currentUser = updatedMe; // Update memory with fresh data
+                                currentUser = updatedMe;
                                 localStorage.setItem('winCashUser', JSON.stringify(currentUser));
                             }
                         }
@@ -1692,7 +1661,6 @@
                     console.error("Data processing failed", e);
                 }
 
-                // MOVED OUTSIDE TRY-CATCH: ALWAYS RE-RENDER TO CLEAR SPINNERS & UPDATE EVERYTHING
                 if (currentUser) {
                     updateSidebar();
                     updateWalletUI();
@@ -1721,9 +1689,6 @@
             });
         }
 
-        // =====================================
-        // HEADER ANNOUNCEMENT & MOBILE PUSH NOTIFICATION
-        // =====================================
         function loadAnnouncement() {
             let ann = localStorage.getItem('winCashAnnouncement');
             if (!ann || ann.trim() === '') {
@@ -1736,15 +1701,14 @@
             }
         }
 
-        // UPDATED: Attractive System Notification Configuration (NO IN-APP TOAST)
         function showSystemNotification(title, bodyText) {
             if (('Notification' in window && Notification.permission === 'granted') || localStorage.getItem('winCashNotifPerm') === 'allowed') {
                 const notifOptions = {
                     body: bodyText,
                     icon: 'https://cdn-icons-png.flaticon.com/512/2933/2933116.png',
                     badge: 'https://cdn-icons-png.flaticon.com/512/2933/2933116.png',
-                    vibrate: [300, 100, 300, 100, 300], // Attractive vibration pattern
-                    requireInteraction: true // Keeps notification visible until interacted
+                    vibrate: [300, 100, 300, 100, 300],
+                    requireInteraction: true
                 };
 
                 if ('serviceWorker' in navigator) {
@@ -1755,7 +1719,7 @@
                     let n = new Notification(title, notifOptions);
                     n.onclick = function(event) {
                         event.preventDefault();
-                        window.focus(); // Focus app when notification is clicked directly
+                        window.focus();
                         this.close();
                     };
                 }
@@ -1781,32 +1745,6 @@
             }
         }
 
-        // =====================================
-        // PUSH NOTIFICATION SYSTEM
-        // =====================================
-        function showAppToast(title, desc) {
-            document.getElementById('toastTitle').innerText = title;
-            document.getElementById('toastDesc').innerText = desc;
-            let toast = document.getElementById('appNotificationToast');
-            toast.classList.add('show');
-            setTimeout(() => {
-                closeAppToast();
-            }, 6000);
-        }
-
-        function closeAppToast() {
-            document.getElementById('appNotificationToast').classList.remove('show');
-        }
-
-        function switchToLiveDraws() {
-            closeAppToast();
-            if (currentUser) {
-                switchView('homeView');
-            } else {
-                switchView('loginView');
-            }
-        }
-
         function initPushNotificationSimulator() {
             window.addEventListener('online', () => {
                 let savedAnn = localStorage.getItem('winCashAnnouncement');
@@ -1817,7 +1755,7 @@
 
             setInterval(() => {
                 fetchSheetData();
-            }, 15000); // Polls every 15 seconds, finds new draws to send attractive notification.
+            }, 15000);
         }
 
         // =====================================
@@ -1977,7 +1915,7 @@
         }
 
         // =====================================
-        // WITHDRAW FUNCTION (WITH BANK CHECK)
+        // WITHDRAW FUNCTION
         // =====================================
         function submitWithdraw(btnId) {
             if (!currentUser.bank && !currentUser.upi) {
@@ -2224,7 +2162,7 @@
         }
 
         // =====================================
-        // UPDATED CLEAN TRANSACTIONS UI 
+        // TRANSACTIONS UI 
         // =====================================
         function renderUserTransactions() {
             const container = document.getElementById('user-transactions-container'); 
@@ -2282,7 +2220,7 @@
         }
 
         // =====================================
-        // DRAW ACTIONS (UPDATED WITH PROGRESS BAR)
+        // DRAW ACTIONS
         // =====================================
         function renderLiveDraws() {
             const container = document.getElementById('live-draws-container'); 
@@ -2304,7 +2242,6 @@
             liveDraws.forEach(draw => {
                 const isJoined = currentUser && allTransactions.some(t => t.userId == currentUser.id && t.type === 'Draw Entry Fee' && t.details.includes(draw.id));
                 
-                // Calculate Total Joined for this draw
                 const drawJoinedTxns = allTransactions.filter(t => t.type === 'Draw Entry Fee' && t.details.includes(draw.id));
                 const drawJoinedCount = new Set(drawJoinedTxns.map(t => t.userId)).size;
 
@@ -2313,7 +2250,6 @@
                     : `<button id="btnJoin_${draw.id}" class="join-btn-small" onclick="joinDraw('${draw.id}', 'btnJoin_${draw.id}')"><i class="fas fa-check-circle"></i> JOIN ₹${draw.fee}</button>`;
                 const cardClass = isJoined ? 'draw-row-card joined-card' : 'draw-row-card';
 
-                // GET MINIMUM USERS LOGIC
                 let minReq = draw.minUsers || localDrawSettings[draw.name] || 50; 
                 let progressPercent = Math.min((drawJoinedCount / minReq) * 100, 100);
                 
@@ -2364,11 +2300,11 @@
         }
 
         // =====================================
-        // JOIN DRAW LOGIC WITH CONFIRMATION ALERT
+        // JOIN DRAW LOGIC (FIXED BUTTON STATE & ERROR HANDLING)
         // =====================================
         function joinDraw(drawId, btnElementId) {
             let btnEl = document.getElementById(btnElementId);
-            if (btnEl && (btnEl.disabled || btnEl.classList.contains('joined'))) return; // Prevent double click instantly
+            if (btnEl && (btnEl.disabled || btnEl.classList.contains('joined'))) return;
 
             const draw = allDraws.find(d => d.id == drawId);
             if (!draw) return;
@@ -2383,10 +2319,8 @@
                 });
             }
             
-            // 1. Confirm Alert before joining
             showConfirm(`क्या आप सच में ${draw.name} को ₹${draw.fee} में जॉइन करना चाहते हैं?`, 
                 function() {
-                    // YES CLICKED: Change Button to Please Wait
                     let originalText = btnEl ? btnEl.innerHTML : `<i class="fas fa-check-circle"></i> JOIN ₹${draw.fee}`;
                     
                     if (btnEl) {
@@ -2396,13 +2330,12 @@
                         btnEl.style.cursor = 'not-allowed';
                     }
 
-                    // 2. Send Request in background
                     sendPost({
                         action: 'joinDraw', drawId: drawId, drawName: draw.name, userId: currentUser.id, 
                         userName: currentUser.name, fee: draw.fee, dateTime: getCurrentDateTime()
                     }, res => {
                         if(res && res.status === 'error') {
-                            // 3. REVERT ON FAILURE
+                            // FAILURE: Revert button back to Join button so user can try again
                             if (btnEl) {
                                 btnEl.disabled = false;
                                 btnEl.innerHTML = originalText;
@@ -2412,7 +2345,7 @@
                             showAlert(res.message || 'Error occurred while saving to server.');
                             fetchSheetData(); 
                         } else {
-                            // 4. SUCCESS: Update Wallet and Make Button 'JOINED' permanently
+                            // SUCCESS: Update Wallet and Make Button 'JOINED' permanently
                             currentUser.depositWallet = depWallet - fee;
                             localStorage.setItem('winCashUser', JSON.stringify(currentUser));
                             updateWalletUI(); 
@@ -2428,7 +2361,6 @@
                                 btnEl.removeAttribute('onclick');
                             }
 
-                            // Locally Transaction history update
                             let tempTxn = {
                                 id: "TXN" + generateTxnID(),
                                 type: 'Draw Entry Fee',
@@ -2440,26 +2372,24 @@
                                 status: 'Approved'
                             };
                             
-                            // Save temporarily so fetchSheetData doesn't erase it before Sync
                             tempLocalTxns.unshift(tempTxn);
                             allTransactions.unshift(tempTxn);
 
                             if(document.getElementById('transactionsView').classList.contains('active')) renderUserTransactions();
                             if(document.getElementById('myDrawsView').classList.contains('active')) renderMyDraws();
 
-                            // Delay fetch slightly to allow backend to write to sheet
                             setTimeout(fetchSheetData, 2000); 
                         }
-                    }, null); // null is sent so sendPost doesn't override button manipulation here.
+                    }, null);
                 },
                 function() {
-                    // CANCEL CLICKED: Do nothing
+                    // Canceled by user
                 }
             );
         }
 
         // =====================================
-        // MY DRAWS (PERMANENT HISTORY FIX)
+        // MY DRAWS
         // =====================================
         function renderMyDraws() {
             const container = document.getElementById('my-draws-container'); 
@@ -2754,7 +2684,6 @@
             container.innerHTML = html;
         }
 
-        // UPDATED Modal Open Logic
         function openDrawModal(drawId=null) {
             editingDrawId = drawId; 
             document.getElementById("drawModal").style.display = "flex";
@@ -2764,8 +2693,6 @@
                 document.getElementById("drawName").value = d.name; 
                 document.getElementById("entryFee").value = d.fee; 
                 document.getElementById("prizePool").value = d.prize; 
-                
-                // Get local target users
                 document.getElementById("minUsers").value = d.minUsers || localDrawSettings[d.name] || 50; 
             } else { 
                 document.getElementById("drawName").value = ''; 
@@ -2775,7 +2702,6 @@
             }
         }
 
-        // UPDATED Save Draw Logic
         function saveDraw(btnId) {
             const name = document.getElementById("drawName").value; 
             const fee = document.getElementById("entryFee").value; 
@@ -2784,11 +2710,9 @@
             
             if(!name || !fee || !prize || !minUsers) return showAlert("Please fill all details!");
 
-            // Save Minimum Users to LocalStorage mapped by Draw Name
             localDrawSettings[name] = minUsers;
             localStorage.setItem('winCashDrawSettings', JSON.stringify(localDrawSettings));
             
-            // Sending it in payload just in case backend gets updated later
             sendPost({action: 'saveDraw', drawId: editingDrawId, name, fee, prize, minUsers}, res => { 
                 closeAllModals(); 
                 showAlert("Draw Saved Successfully!"); 
@@ -2802,9 +2726,6 @@
             }); 
         }
 
-        // =====================================
-        // WINNER DECLARATION
-        // =====================================
         function toggleWinnerMode(mode) {
             currentWinnerMode = mode;
             if(mode === 'manual') {
@@ -3010,7 +2931,6 @@
         // VIEW ROUTING
         // =====================================
         function switchView(viewId, pushHistory = true, replace = false) {
-            
             if (document.getElementById('depPageView2').style.display === 'block' && viewId !== 'depositView') {
                 document.getElementById('depositCancelModal').style.display = 'flex';
                 if (pushHistory) history.pushState({ view: 'depositView' }, "", "#depositView");
